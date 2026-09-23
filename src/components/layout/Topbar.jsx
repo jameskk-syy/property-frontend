@@ -5,12 +5,20 @@ import { notifications } from '../../data/mockData'
 import { ROLE_LABELS } from '../../data/roles'
 import { useAuth } from '../../context/AuthContext'
 import Avatar from '../ui/Avatar'
+import LogoutConfirmDialog from '../patterns/LogoutConfirmDialog'
 
 export default function Topbar({ onMenuClick }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const menuRef = useRef(null)
+
+  const handleConfirmLogout = async () => {
+    setLogoutOpen(false)
+    await logout()
+    navigate('/login', { replace: true })
+  }
   const notificationsPath = `/${user.role}/notifications`
   const profilePath = `/${user.role}/profile`
 
@@ -77,8 +85,8 @@ export default function Topbar({ onMenuClick }) {
               </Link>
               <button
                 onClick={() => {
-                  logout()
-                  navigate('/login')
+                  setMenuOpen(false)
+                  setLogoutOpen(true)
                 }}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
               >
@@ -88,6 +96,12 @@ export default function Topbar({ onMenuClick }) {
           )}
         </div>
       </div>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onConfirm={handleConfirmLogout}
+        onCancel={() => setLogoutOpen(false)}
+      />
     </header>
   )
 }

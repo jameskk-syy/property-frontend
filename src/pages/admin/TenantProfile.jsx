@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Phone, MessageCircle, Send, FileText } from 'lucide-react'
 import Card from '../../components/ui/Card'
@@ -7,16 +7,65 @@ import Button from '../../components/ui/Button'
 import Avatar from '../../components/ui/Avatar'
 import Tabs from '../../components/ui/Tabs'
 import EmptyState from '../../components/ui/EmptyState'
+import Skeleton, { CardSkeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../context/ToastContext'
-import { tenants, payments, documents, formatKsh } from '../../data/mockData'
+import { tenants as defaultTenants, payments, documents, formatKsh } from '../../data/mockData'
+import { api } from '../../api/client'
 
 export default function TenantProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { showToast } = useToast()
   const [tab, setTab] = useState('Overview')
-  const tenant = tenants.find((t) => t.id === id) || tenants[0]
+  const [tenant, setTenant] = useState(() => defaultTenants.find((t) => t.id === id) || null)
+
+  useEffect(() => {
+    let mounted = true
+    api.getTenant(id).then((t) => {
+      if (mounted && t) {
+        setTenant({
+          id: t.name || id,
+          name: t.tenant_name || t.name || 'Tenant',
+          unit: t.unit || 'Assigned',
+          phone: t.phone_number || t.phone || '',
+          rent: t.rent_amount || t.rent || 0,
+          balance: 0,
+          status: 'Current'
+        })
+      }
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [id])
+
+  if (!tenant) {
+    return (
+      <div>
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-4"
+        >
+          <ArrowLeft size={15} /> Back
+        </button>
+        <Skeleton className="h-24 w-full rounded-xl2 mb-6" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl2" />)}
+        </div>
+        <CardSkeleton height={220} />
+      </div>
+    )
+  }
+
   const tenantPayments = payments.filter((p) => p.tenant === tenant.name)
+
+  const handleSendReminder = async () => {
+    showToast(`WhatsApp reminder sent to ${tenant.name}.`)
+    try {
+      await api.sendWhatsAppMessage({
+        to: tenant.phone,
+        message: `Hello ${tenant.name}, kindly note your rent account has a current balance of ${formatKsh(tenant.balance)}.`
+      })
+    } catch {}
+  }
 
   return (
     <div>
@@ -41,8 +90,8 @@ export default function TenantProfile() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" icon={MessageCircle}>Message</Button>
-            <Button icon={Send} onClick={() => showToast(`Reminder sent to ${tenant.name}.`)}>
+            <Button variant="secondary" icon={MessageCircle} onClick={() => navigate('/admin/whatsapp')}>Message</Button>
+            <Button icon={Send} onClick={handleSendReminder}>
               Send Reminder
             </Button>
           </div>

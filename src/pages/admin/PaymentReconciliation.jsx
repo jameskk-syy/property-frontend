@@ -1,48 +1,125 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle2, Wallet, AlertCircle, Clock } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
+import FormModal from '../../components/patterns/FormModal'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
+import { Field, TextInput, Select } from '../../components/ui/Field'
 import { useToast } from '../../context/ToastContext'
 import { payments as initialPayments, formatKsh } from '../../data/mockData'
+import { api } from '../../api/client'
 
 export default function PaymentReconciliation() {
   const { showToast } = useToast()
+  const [rows, setRows] = useState([])
   const [payments, setPayments] = useState(initialPayments)
+  const [properties, setProperties] = useState([])
+  const [tenants, setTenants] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [matchFor, setMatchFor] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ property: '', tenant: '', amount: '' })
 
-  const unmatched = payments.filter((p) => p.status === 'Unmatched')
-  const pending = payments.filter((p) => p.status === 'Pending')
-  const total = payments.reduce((s, p) => s + p.amount, 0)
+  const load = () => {
+    setLoading(true)
+    Promise.all([
+      api.listUnreconciled().catch(() => []),
+      api.getPayments().catch(() => []),
+    ]).then(([unrec, pays]) => {
+      setRows(Array.isArray(unrec) ? unrec : [])
+      if (pays && pays.length > 0) setPayments(pays)
+    }).finally(() => setLoading(false))
+  }
 
-  const match = (id, tenant) => {
-    setPayments((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'Reconciled' } : p)))
-    showToast(`Payment matched to ${tenant}'s invoice.`)
+  useEffect(() => {
+    load()
+    api.getProperties().then((res) => { if (res) setProperties(res) }).catch(() => {})
+    api.getTenants().then((res) => { if (res) setTenants(res) }).catch(() => {})
+  }, [])
+
+  const total = rows.reduce((s, p) => s + (p.amount || 0), 0)
+  const reconciledCount = payments.filter((p) => p.status === 'Reconciled').length
+
+  const openMatch = (row) => {
+    setForm({ property: properties[0]?.id || '', tenant: '', amount: row.amount || '' })
+    setMatchFor(row)
+  }
+
+  const handleMatch = async () => {
+    if (!matchFor || !form.property) {
+      showToast('Select a property to match this payment to.')
+      return
+    }
+    setSaving(true)
+    try {
+      await api.reconcilePayment({
+        bankTransaction: matchFor.name,
+        property: form.property,
+        amount: form.amount || matchFor.amount,
+        tenant: form.tenant || null,
+        referenceNo: matchFor.reference || null,
+      })
+      showToast('Payment reconciled and recorded successfully.')
+      setMatchFor(null)
+      load()
+    } catch (err) {
+      showToast(err?.message || 'Could not reconcile this payment.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <ListPageTemplate
-      title="Payment Reconciliation"
-      description="Match M-Pesa and bank payments against tenant invoices."
-      stats={[
-        { label: 'Total Received', value: formatKsh(total), icon: Wallet },
-        { label: 'Reconciled', value: payments.filter((p) => p.status === 'Reconciled').length, icon: CheckCircle2, tone: 'brand' },
-        { label: 'Pending', value: pending.length, icon: Clock, tone: 'orange' },
-        { label: 'Unmatched', value: unmatched.length, icon: AlertCircle, tone: 'red' },
-      ]}
-      columns={[
-        { key: 'id', header: 'Reference' },
-        { key: 'tenant', header: 'Payer' },
-        { key: 'method', header: 'Channel' },
-        { key: 'amount', header: 'Amount', render: (r) => formatKsh(r.amount) },
-        { key: 'date', header: 'Date' },
-        { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
-        { key: 'actions', header: '', render: (r) => r.status !== 'Reconciled' && (
-          <Button variant="secondary" size="sm" onClick={() => match(r.id, r.tenant)}>Match</Button>
-        ) },
-      ]}
-      rows={payments}
-      searchKeys={['tenant', 'id', 'method']}
-      searchPlaceholder="Search payments…"
-    />
+    <>
+      <ListPageTemplate
+        title="Payment Reconciliation"
+        description="Match incoming M-Pesa and bank payments against tenant invoices."
+        loading={loading}
+        stats={[
+          { label: 'Unreconciled Value', value: formatKsh(total), icon: Wallet, tone: 'orange' },
+          { label: 'Unreconciled', value: rows.length, icon: AlertCircle, tone: 'red' },
+          { label: 'Reconciled Payments', value: reconciledCount, icon: CheckCircle2, tone: 'brand' },
+          { label: 'Recorded Payments', value: payments.length, icon: Clock, tone: 'blue' },
+        ]}
+        columns={[
+          { key: 'reference', header: 'Reference', render: (r) => r.reference || r.name },
+          { key: 'bank_account', header: 'Account' },
+          { key: 'amount', header: 'Amount', render: (r) => formatKsh(r.amount) },
+          { key: 'transaction_date', header: 'Date', render: (r) => r.transaction_date || '—' },
+          { key: 'actions', header: '', render: (r) => (
+            <Button variant="secondary" size="sm" onClick={() => openMatch(r)}>Match</Button>
+          ) },
+        ]}
+        rows={rows}
+        searchKeys={['reference', 'bank_account']}
+        searchPlaceholder="Search transactions…"
+        emptyMessage="No unreconciled transactions. All payments are matched."
+      />
+
+      <FormModal
+        open={!!matchFor}
+        onClose={() => setMatchFor(null)}
+        title="Match Payment"
+        description={matchFor ? `Reconcile ${formatKsh(matchFor.amount)} (${matchFor.reference || matchFor.name})` : ''}
+        onSubmit={handleMatch}
+        submitLabel={saving ? 'Matching…' : 'Match & Record'}
+      >
+        <Field label="Property">
+          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+            <option value="">Select property…</option>
+            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Tenant (optional)">
+          <Select value={form.tenant} onChange={(e) => setForm({ ...form, tenant: e.target.value })}>
+            <option value="">Unassigned</option>
+            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Amount (KSh)">
+          <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+        </Field>
+      </FormModal>
+    </>
   )
 }

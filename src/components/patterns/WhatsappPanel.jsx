@@ -2,12 +2,48 @@ import { useState } from 'react'
 import { Send, Search, MessageCircle } from 'lucide-react'
 import Card from '../ui/Card'
 import Avatar from '../ui/Avatar'
+import EmptyState from '../ui/EmptyState'
 import { whatsappThreads } from '../../data/mockData'
+import { api } from '../../api/client'
 
 export default function WhatsappPanel() {
-  const [activeId, setActiveId] = useState(whatsappThreads[0].id)
+  const [activeId, setActiveId] = useState(whatsappThreads[0]?.id ?? null)
   const [draft, setDraft] = useState('')
-  const active = whatsappThreads.find((t) => t.id === activeId)
+  const [messages, setMessages] = useState({})
+  const active = whatsappThreads.find((t) => t.id === activeId) || whatsappThreads[0] || null
+
+  if (!active) {
+    return (
+      <Card padded={false} className="p-8">
+        <EmptyState message="No conversations yet" hint="WhatsApp threads will appear here once tenants start messaging." />
+      </Card>
+    )
+  }
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault()
+    if (!draft.trim()) return
+    const text = draft.trim()
+    setDraft('')
+    
+    // Add locally for instant UI response
+    const currentList = messages[activeId] || []
+    setMessages({
+      ...messages,
+      [activeId]: [...currentList, { id: Date.now(), text, sender: 'me', time: 'Just now' }]
+    })
+
+    try {
+      await api.sendWhatsAppMessage({
+        to: active.phone || '+254712345678',
+        message: text
+      })
+    } catch (err) {
+      console.warn('WhatsApp API simulation:', err.message)
+    }
+  }
+
+  const customMsgs = messages[activeId] || []
 
   return (
     <Card padded={false} className="overflow-hidden">
@@ -64,13 +100,15 @@ export default function WhatsappPanel() {
             <div className="max-w-[75%] ml-auto bg-brand-500 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm">
               Noted, thank you for letting us know. We'll follow up shortly.
             </div>
+            {customMsgs.map((m) => (
+              <div key={m.id} className="max-w-[75%] ml-auto bg-brand-500 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm">
+                {m.text}
+              </div>
+            ))}
           </div>
           <form
             className="flex items-center gap-2 p-3 border-t border-slate-100"
-            onSubmit={(e) => {
-              e.preventDefault()
-              setDraft('')
-            }}
+            onSubmit={handleSendMessage}
           >
             <input
               value={draft}

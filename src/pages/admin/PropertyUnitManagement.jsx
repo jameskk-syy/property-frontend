@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
@@ -8,12 +8,41 @@ import DataTable from '../../components/ui/DataTable'
 import Tabs from '../../components/ui/Tabs'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
-import { properties, units, formatKsh } from '../../data/mockData'
+import { StatCardsSkeleton } from '../../components/ui/Skeleton'
+import { properties as defaultProps, units as defaultUnits, formatKsh } from '../../data/mockData'
 import { Building2, Home, Users } from 'lucide-react'
+import { api } from '../../api/client'
 
 export default function PropertyUnitManagement() {
   const [tab, setTab] = useState('Properties')
+  const [propList, setPropList] = useState([])
+  const [unitList, setUnitList] = useState([])
+  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    let mounted = true
+    Promise.allSettled([api.getProperties(), api.getUnits()]).then(([p, u]) => {
+      if (!mounted) return
+      if (p.status === 'fulfilled' && Array.isArray(p.value)) setPropList(p.value)
+      if (u.status === 'fulfilled' && Array.isArray(u.value)) setUnitList(u.value)
+      setLoading(false)
+    })
+    return () => { mounted = false }
+  }, [])
+
+  // Unit counts: prefer the real Property Unit list; if it's empty, fall back to
+  // the per-property counts returned by getProperties (total_units/occupied).
+  const hasUnits = unitList && unitList.length > 0
+  const totalUnits = hasUnits
+    ? unitList.length
+    : propList.reduce((s, p) => s + (p.units || 0), 0)
+  const occupiedUnits = hasUnits
+    ? unitList.filter((u) => u.status === 'Occupied').length
+    : propList.reduce((s, p) => s + (p.occupied || 0), 0)
+  const vacantUnits = hasUnits
+    ? unitList.filter((u) => u.status === 'Vacant').length
+    : Math.max(0, totalUnits - occupiedUnits)
 
   const propertyColumns = [
     { key: 'name', header: 'Property', render: (r) => (
@@ -44,25 +73,30 @@ export default function PropertyUnitManagement() {
         actions={<Link to="/admin/property-onboarding"><Button icon={Plus}>Add Property</Button></Link>}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Properties" value={properties.length} icon={Building2} />
-        <StatCard label="Total Units" value={units.length * 3} icon={Home} tone="blue" />
-        <StatCard label="Occupied" value={`${properties.reduce((s, p) => s + p.occupied, 0)}`} icon={Users} tone="brand" />
-        <StatCard label="Vacant" value={units.filter((u) => u.status === 'Vacant').length} icon={Home} tone="orange" />
-      </div>
+      {loading ? (
+        <div className="mb-6"><StatCardsSkeleton count={4} /></div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <StatCard label="Properties" value={propList.length} icon={Building2} />
+          <StatCard label="Total Units" value={totalUnits} icon={Home} tone="blue" />
+          <StatCard label="Occupied" value={occupiedUnits} icon={Users} tone="brand" />
+          <StatCard label="Vacant" value={vacantUnits} icon={Home} tone="orange" />
+        </div>
+      )}
 
       <Card padded={false} className="p-5">
         <Tabs tabs={['Properties', 'Units']} active={tab} onChange={setTab} />
         {tab === 'Properties' ? (
           <DataTable
+            loading={loading}
             columns={propertyColumns}
-            rows={properties}
+            rows={propList}
             searchKeys={['name', 'location', 'landlord']}
             searchPlaceholder="Search properties…"
             onRowClick={(row) => navigate(`/admin/properties/${row.id}`)}
           />
         ) : (
-          <DataTable columns={unitColumns} rows={units} searchKeys={['property', 'unit', 'tenant']} searchPlaceholder="Search units…" />
+          <DataTable loading={loading} columns={unitColumns} rows={unitList} searchKeys={['property', 'unit', 'tenant']} searchPlaceholder="Search units…" />
         )}
       </Card>
     </div>

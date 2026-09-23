@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import EmptyState from './EmptyState'
+import { TableSkeleton } from './Skeleton'
 
 const PAGE_SIZE = 8
 
@@ -20,6 +21,7 @@ export default function DataTable({
   rightActions,
   onRowClick,
   paginate = true,
+  loading = false,
 }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
@@ -71,20 +73,25 @@ export default function DataTable({
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="-mx-5">
+          <TableSkeleton columns={columns.length} />
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
         <>
           <div className="overflow-x-auto -mx-5 rounded-lg">
-            <table className="w-full text-sm border-separate border-spacing-0">
+            <table className="w-full text-sm border-separate border-spacing-0 table-fixed">
               <thead>
                 <tr className="text-left text-slate-500 bg-slate-50">
                   {columns.map((col, i) => (
                     <th
                       key={col.key}
+                      style={col.width ? { width: col.width } : undefined}
                       className={`font-semibold px-5 py-3 whitespace-nowrap border-y border-slate-200 ${
                         i === 0 ? 'border-l-0' : ''
-                      }`}
+                      } ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}`}
                     >
                       {col.header}
                     </th>
@@ -94,7 +101,7 @@ export default function DataTable({
               <tbody>
                 {visible.map((row, i) => (
                   <tr
-                    key={row.id || i}
+                    key={row.id || row.name || i}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     className={`${i % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'} ${
                       onRowClick
@@ -105,7 +112,9 @@ export default function DataTable({
                     {columns.map((col) => (
                       <td
                         key={col.key}
-                        className="px-5 py-3.5 text-slate-700 whitespace-nowrap border-b border-slate-100"
+                        className={`px-5 py-3.5 text-slate-700 whitespace-nowrap border-b border-slate-100 ${
+                          col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
+                        }`}
                       >
                         {col.render ? col.render(row) : row[col.key]}
                       </td>

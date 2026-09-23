@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Building2, ArrowRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { DEMO_USERS, ROLE_LABELS } from '../../data/roles'
 import { TextInput, Field } from '../../components/ui/Field'
 import Button from '../../components/ui/Button'
 
@@ -12,20 +11,25 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const user = login({ email })
-    if (!user) {
-      setError('No account found for that email. Try one of the demo accounts below.')
-      return
+    setError('')
+    setLoading(true)
+    try {
+      const user = await login({ email, password })
+      if (!user) {
+        setError('Invalid email address or password. Please check your credentials.')
+        setLoading(false)
+        return
+      }
+      navigate(`/${user.role}`)
+    } catch (err) {
+      setError(err.message || 'Login failed. Invalid credentials.')
+    } finally {
+      setLoading(false)
     }
-    navigate(`/${user.role}`)
-  }
-
-  const quickLogin = (role) => {
-    const user = login({ role })
-    if (user) navigate(`/${user.role}`)
   }
 
   return (
@@ -66,7 +70,7 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Email address">
               <TextInput
-                type="email"
+                type="text"
                 placeholder="you@nest.co.ke"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -80,34 +84,16 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-xs font-medium text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-100">{error}</p>}
             <div className="flex items-center justify-end">
               <Link to="/reset-password" className="text-xs font-medium text-brand-600 hover:text-brand-700">
                 Forgot password?
               </Link>
             </div>
-            <Button type="submit" className="w-full" icon={ArrowRight}>
-              Sign in
+            <Button type="submit" className="w-full" icon={ArrowRight} disabled={loading}>
+              {loading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-
-          <div className="mt-8">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
-              Demo quick access
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_USERS.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => quickLogin(u.role)}
-                  className="text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-brand-400 hover:bg-brand-50/50 transition-colors"
-                >
-                  <p className="text-sm font-medium text-slate-800">{ROLE_LABELS[u.role]}</p>
-                  <p className="text-xs text-slate-500 truncate">{u.name}</p>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

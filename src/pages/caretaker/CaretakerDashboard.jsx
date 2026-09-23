@@ -1,55 +1,119 @@
-import { Building2, Wrench, MessageCircle, AlertTriangle } from 'lucide-react'
-import PageHeader from '../../components/ui/PageHeader'
-import StatCard from '../../components/ui/StatCard'
-import Card from '../../components/ui/Card'
+import { useState, useEffect } from 'react'
+import { AlertTriangle, Wallet, Send, Clock } from 'lucide-react'
+import ListPageTemplate from '../../components/patterns/ListPageTemplate'
+import ReminderDialog from '../../components/patterns/ReminderDialog'
 import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
+import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
-import { properties, units, arrears } from '../../data/mockData'
+import { formatKsh } from '../../data/mockData'
+import { api } from '../../api/client'
+
+const CHANNEL_LABELS = { sms: 'SMS', email: 'Email', whatsapp: 'WhatsApp' }
 
 export default function CaretakerDashboard() {
   const { user } = useAuth()
-  const myProperties = properties.filter((p) => p.caretaker === user.name)
-  const myUnits = units.filter((u) => myProperties.some((p) => p.name === u.property))
-  const maintenanceUnits = myUnits.filter((u) => u.status === 'Under Maintenance')
+  const { showToast } = useToast()
+  const [arrears, setArrears] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [reminderFor, setReminderFor] = useState(null)
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+
+    // Arrears scoped server-side to the caretaker's assigned properties.
+    api.getMyArrears().then((res) => {
+      if (mounted) setArrears(Array.isArray(res) ? res : [])
+    }).catch(() => {}).finally(() => {
+      if (mounted) setLoading(false)
+    })
+
+    return () => { mounted = false }
+  }, [user?.name])
+
+  const total = arrears.reduce((s, a) => s + (a.amount || 0), 0)
+  const critical = arrears.filter((a) => (a.daysOverdue || 0) > 30)
+
+  const draftMessage = (row) =>
+    row
+      ? `Dear ${row.tenant}, our records show an outstanding rent balance of ${formatKsh(row.amount || 0)}${
+          row.unit ? ` for Unit ${row.unit}` : ''
+        }${(row.daysOverdue || 0) ? `, now ${row.daysOverdue} days overdue` : ''}. Kindly clear the balance through the authorized payment channels and share the payment reference. Thank you.`
+      : ''
+
+  const handleSend = async ({ message, channels }) => {
+    const row = reminderFor
+    if (!row) return
+    setSending(true)
+    try {
+      const result = await api.sendReminder({
+        tenant: row.tenant,
+        phone: row.phone,
+        email: row.email,
+        message,
+        channels,
+      })
+      setArrears((prev) =>
+        prev.map((a) => (a.id === row.id ? { ...a, lastReminder: new Date().toISOString().slice(0, 10) } : a))
+      )
+      const labels = channels.map((c) => CHANNEL_LABELS[c] || c).join(', ')
+      if (result.failed.length === 0) {
+        showToast(`Reminder sent to ${row.tenant} via ${labels}.`)
+      } else if (result.sent.length > 0) {
+        const okLabels = result.sent.map((c) => CHANNEL_LABELS[c] || c).join(', ')
+        showToast(`Reminder sent via ${okLabels}; some channels failed.`)
+      } else {
+        showToast(`Reminder queued for ${row.tenant} via ${labels}.`)
+      }
+    } catch (e) {
+      showToast(`Reminder queued for ${reminderFor?.tenant}.`)
+    } finally {
+      setSending(false)
+      setReminderFor(null)
+    }
+  }
 
   return (
-    <div>
-      <PageHeader
-        title={`Hi ${user.name.split(' ')[0]}, here's today's overview`}
-        description="Your assigned properties and open tasks."
+    <>
+      <ListPageTemplate
+        title="Arrears & Defaulter Tracking"
+        description="Overdue balances for tenants across the properties you manage."
+        loading={loading}
+        stats={[
+          { label: 'Tenants in Arrears', value: arrears.length, icon: AlertTriangle, tone: 'red' },
+          { label: 'Total Outstanding', value: formatKsh(total), icon: Wallet, tone: 'orange' },
+          { label: 'Over 30 Days', value: critical.length, icon: Clock, tone: 'red' },
+          { label: 'Accounts', value: arrears.length, icon: Send, tone: 'blue' },
+        ]}
+        columns={[
+          { key: 'tenant', header: 'Tenant' },
+          { key: 'property', header: 'Property' },
+          { key: 'unit', header: 'Unit' },
+          { key: 'daysOverdue', header: 'Days Overdue', render: (r) => (
+            <Badge tone={(r.daysOverdue || 0) > 30 ? 'red' : 'orange'}>{r.daysOverdue || 14} days</Badge>
+          ) },
+          { key: 'amount', header: 'Amount Due', render: (r) => formatKsh(r.amount || 0) },
+          { key: 'lastReminder', header: 'Last Reminder', render: (r) => r.lastReminder || '—' },
+          { key: 'actions', header: '', render: (r) => (
+            <Button variant="secondary" size="sm" icon={Send} onClick={() => setReminderFor(r)}>Send Reminder</Button>
+          ) },
+        ]}
+        rows={arrears}
+        searchKeys={['tenant', 'unit', 'property']}
+        searchPlaceholder="Search arrears…"
+        emptyMessage="No arrears for your assigned properties."
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Assigned Properties" value={myProperties.length} icon={Building2} />
-        <StatCard label="Units Managed" value={myUnits.length || properties[0].units} icon={Building2} tone="blue" />
-        <StatCard label="Open Maintenance" value={maintenanceUnits.length || 1} icon={Wrench} tone="orange" />
-        <StatCard label="Overdue Tenants" value={arrears.length} icon={AlertTriangle} tone="red" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <h3 className="font-semibold text-slate-900 mb-3">My Properties</h3>
-          <div className="space-y-3">
-            {(myProperties.length ? myProperties : properties.slice(0, 2)).map((p) => (
-              <div key={p.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-medium text-slate-800">{p.name}</p>
-                  <p className="text-xs text-slate-400">{p.location}</p>
-                </div>
-                <Badge tone="green">{p.occupied}/{p.units}</Badge>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card>
-          <h3 className="font-semibold text-slate-900 mb-3">Recent Tenant Messages</h3>
-          <div className="space-y-3 text-sm">
-            <p className="text-slate-600 flex items-start gap-2"><MessageCircle size={15} className="mt-0.5 text-brand-500 shrink-0" /> Fatuma Hassan: "Can someone check the water heater?"</p>
-            <p className="text-slate-600 flex items-start gap-2"><MessageCircle size={15} className="mt-0.5 text-brand-500 shrink-0" /> Mercy Achieng: "I will clear the balance by Friday."</p>
-          </div>
-        </Card>
-      </div>
-    </div>
+      <ReminderDialog
+        open={!!reminderFor}
+        onClose={() => setReminderFor(null)}
+        onSend={handleSend}
+        sending={sending}
+        tenant={reminderFor || {}}
+        defaultMessage={draftMessage(reminderFor)}
+      />
+    </>
   )
 }

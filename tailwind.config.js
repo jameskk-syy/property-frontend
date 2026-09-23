@@ -29,6 +29,21 @@ export default {
       borderRadius: {
         xl2: '1rem',
       },
+      keyframes: {
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+      },
+      animation: {
+        shimmer: 'shimmer 1.5s ease-in-out infinite',
+      },
+      backgroundImage: {
+        shimmer: 'linear-gradient(90deg, #eef2f7 25%, #e2e8f0 37%, #eef2f7 63%)',
+      },
+      backgroundSize: {
+        shimmer: '200% 100%',
+      },
     },
   },
   plugins: [],

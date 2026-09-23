@@ -1,21 +1,39 @@
-import { ClipboardList } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
-import { auditLog } from '../../data/mockData'
+import { Clock, Shield } from 'lucide-react'
+import { api } from '../../api/client'
 
 export default function AuditLog() {
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+    api.getAuditLogs({ limit: 500 }).then((res) => {
+      if (mounted && Array.isArray(res)) setLogs(res)
+    }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [])
+
   return (
     <ListPageTemplate
-      title="System Audit Log"
-      description="A record of key actions taken across your organization's workspace."
-      stats={[{ label: 'Events Logged (7d)', value: auditLog.length, icon: ClipboardList }]}
-      columns={[
-        { key: 'actor', header: 'Actor' },
-        { key: 'action', header: 'Action' },
-        { key: 'time', header: 'Timestamp' },
+      title="Audit Log"
+      description="Track all system activities and changes."
+      loading={loading}
+      stats={[
+        { label: 'Total Events', value: logs.length, icon: Shield },
+        { label: 'Today', value: logs.filter(l => l.time && l.time.startsWith(new Date().toISOString().slice(0, 10))).length, icon: Clock, tone: 'blue' },
       ]}
-      rows={auditLog}
-      searchKeys={['actor', 'action']}
-      searchPlaceholder="Search audit log…"
+      columns={[
+        { key: 'actor', header: 'User' },
+        { key: 'action', header: 'Action' },
+        { key: 'doctype', header: 'DocType' },
+        { key: 'document', header: 'Document' },
+        { key: 'time', header: 'Timestamp', render: (r) => r.time ? new Date(r.time).toLocaleString() : '—' },
+      ]}
+      rows={logs}
+      searchKeys={['actor', 'action', 'doctype']}
+      searchPlaceholder="Search audit logs…"
     />
   )
 }

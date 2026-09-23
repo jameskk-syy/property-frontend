@@ -8,7 +8,6 @@ export const PERMISSION_MODULES = [
       { key: 'properties', label: 'Properties & Units' },
       { key: 'billing', label: 'Tenants & Billing' },
       { key: 'vacancy', label: 'Vacancy Management' },
-      { key: 'tenantOnboarding', label: 'Tenant Onboarding' },
       { key: 'propertyOnboarding', label: 'Property Onboarding' },
     ],
   },
@@ -16,10 +15,12 @@ export const PERMISSION_MODULES = [
     section: 'Finance',
     modules: [
       { key: 'financialReports', label: 'Financial Reports' },
+      { key: 'accounting', label: 'Accounting' },
       { key: 'paymentReconciliation', label: 'Payment Reconciliation' },
       { key: 'arrears', label: 'Arrears Tracking' },
       { key: 'salaries', label: 'Salary Management' },
       { key: 'expenses', label: 'Expense Management' },
+      { key: 'approvals', label: 'Approvals' },
     ],
   },
   {

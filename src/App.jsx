@@ -12,9 +12,9 @@ import AdminDashboard from './pages/admin/Dashboard'
 import PropertyUnitManagement from './pages/admin/PropertyUnitManagement'
 import TenantBillingManagement from './pages/admin/TenantBillingManagement'
 import FinancialReports from './pages/admin/FinancialReports'
+import Invoices from './pages/admin/Invoices'
 import PaymentReconciliation from './pages/admin/PaymentReconciliation'
 import ArrearsManagement from './pages/admin/ArrearsManagement'
-import TenantOnboarding from './pages/admin/TenantOnboarding'
 import PropertyOnboarding from './pages/admin/PropertyOnboarding'
 import VacancyManagement from './pages/admin/VacancyManagement'
 import LandlordManagement from './pages/admin/LandlordManagement'
@@ -22,8 +22,16 @@ import CaretakerManagement from './pages/admin/CaretakerManagement'
 import AccessManagement from './pages/admin/AccessManagement'
 import DocumentManagement from './pages/admin/DocumentManagement'
 import ConstructionManagement from './pages/admin/ConstructionManagement'
+import AdminComplaints from './pages/admin/AdminComplaints'
+import HeldItems from './pages/admin/HeldItems'
+import ConstructionPurchases from './pages/admin/ConstructionPurchases'
+import ConstructionSuppliers from './pages/admin/ConstructionSuppliers'
 import SalaryManagement from './pages/admin/SalaryManagement'
+import SalarySlips from './pages/admin/SalarySlips'
+import PayrollProcessing from './pages/admin/PayrollProcessing'
 import ExpenseManagement from './pages/admin/ExpenseManagement'
+import ApprovalsInbox from './pages/admin/ApprovalsInbox'
+import Accounting from './pages/admin/Accounting'
 import WhatsappCommunication from './pages/admin/WhatsappCommunication'
 import NotificationsCenter from './pages/admin/NotificationsCenter'
 import AuditLog from './pages/admin/AuditLog'
@@ -33,10 +41,12 @@ import PropertyDetail from './pages/admin/PropertyDetail'
 
 // Shared
 import AccountSettings from './pages/shared/AccountSettings'
+import NotFound from './pages/shared/NotFound'
 
 // Landlord
 import LandlordDashboard from './pages/landlord/LandlordDashboard'
 import LandlordProperties from './pages/landlord/LandlordProperties'
+import LandlordPropertyDetail from './pages/landlord/LandlordPropertyDetail'
 import LandlordBilling from './pages/landlord/LandlordBilling'
 import LandlordFinancialReports from './pages/landlord/LandlordFinancialReports'
 
@@ -44,12 +54,18 @@ import LandlordFinancialReports from './pages/landlord/LandlordFinancialReports'
 import CaretakerDashboard from './pages/caretaker/CaretakerDashboard'
 import CaretakerProperties from './pages/caretaker/CaretakerProperties'
 import CaretakerMaintenance from './pages/caretaker/CaretakerMaintenance'
+import CaretakerTenants from './pages/caretaker/CaretakerTenants'
+import TenantOnboarding from './pages/caretaker/TenantOnboarding'
+import CaretakerExpenses from './pages/caretaker/CaretakerExpenses'
+import CaretakerMeterReadings from './pages/caretaker/CaretakerMeterReadings'
 
 // Tenant
 import TenantDashboard from './pages/tenant/TenantDashboard'
 import TenantLease from './pages/tenant/TenantLease'
 import TenantPayments from './pages/tenant/TenantPayments'
+import TenantInvoices from './pages/tenant/TenantInvoices'
 import TenantDocuments from './pages/tenant/TenantDocuments'
+import TenantComplaints from './pages/tenant/TenantComplaints'
 
 export default function App() {
   const { user } = useAuth()
@@ -72,9 +88,9 @@ export default function App() {
         <Route path="properties" element={<PropertyUnitManagement />} />
         <Route path="billing" element={<TenantBillingManagement />} />
         <Route path="financial-reports" element={<FinancialReports />} />
+        <Route path="invoices" element={<Invoices />} />
         <Route path="payment-reconciliation" element={<PaymentReconciliation />} />
         <Route path="arrears" element={<ArrearsManagement />} />
-        <Route path="tenant-onboarding" element={<TenantOnboarding />} />
         <Route path="property-onboarding" element={<PropertyOnboarding />} />
         <Route path="vacancy" element={<VacancyManagement />} />
         <Route path="landlords" element={<LandlordManagement />} />
@@ -82,8 +98,16 @@ export default function App() {
         <Route path="access-management" element={<AccessManagement />} />
         <Route path="documents" element={<DocumentManagement />} />
         <Route path="construction" element={<ConstructionManagement />} />
+        <Route path="complaints" element={<AdminComplaints />} />
+        <Route path="held-items" element={<HeldItems />} />
+        <Route path="construction/purchases" element={<ConstructionPurchases />} />
+        <Route path="construction/suppliers" element={<ConstructionSuppliers />} />
         <Route path="salaries" element={<SalaryManagement />} />
+        <Route path="salary-slips" element={<SalarySlips />} />
+        <Route path="payroll" element={<PayrollProcessing />} />
         <Route path="expenses" element={<ExpenseManagement />} />
+        <Route path="approvals" element={<ApprovalsInbox />} />
+        <Route path="accounting" element={<Accounting />} />
         <Route path="whatsapp" element={<WhatsappCommunication />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="audit-log" element={<AuditLog />} />
@@ -91,6 +115,7 @@ export default function App() {
         <Route path="tenants/:id" element={<TenantProfile />} />
         <Route path="properties/:id" element={<PropertyDetail />} />
         <Route path="profile" element={<AccountSettings />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
 
       {/* Landlord workspace */}
@@ -104,11 +129,13 @@ export default function App() {
       >
         <Route index element={<LandlordDashboard />} />
         <Route path="properties" element={<LandlordProperties />} />
+        <Route path="properties/:id" element={<LandlordPropertyDetail />} />
         <Route path="billing" element={<LandlordBilling />} />
         <Route path="financial-reports" element={<LandlordFinancialReports />} />
         <Route path="documents" element={<DocumentManagement />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="profile" element={<AccountSettings />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
 
       {/* Caretaker workspace */}
@@ -122,11 +149,15 @@ export default function App() {
       >
         <Route index element={<CaretakerDashboard />} />
         <Route path="properties" element={<CaretakerProperties />} />
+        <Route path="tenants" element={<CaretakerTenants />} />
         <Route path="tenant-onboarding" element={<TenantOnboarding />} />
+        <Route path="expenses" element={<CaretakerExpenses />} />
+        <Route path="meter-readings" element={<CaretakerMeterReadings />} />
         <Route path="maintenance" element={<CaretakerMaintenance />} />
         <Route path="whatsapp" element={<WhatsappCommunication />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="profile" element={<AccountSettings />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
 
       {/* Tenant portal */}
@@ -141,20 +172,20 @@ export default function App() {
         <Route index element={<TenantDashboard />} />
         <Route path="lease" element={<TenantLease />} />
         <Route path="payments" element={<TenantPayments />} />
+        <Route path="invoices" element={<TenantInvoices />} />
         <Route path="documents" element={<TenantDocuments />} />
+        <Route path="complaints" element={<TenantComplaints />} />
         <Route path="support" element={<WhatsappCommunication />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="profile" element={<AccountSettings />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
 
       <Route
         path="/"
         element={user ? <Navigate to={`/${user.role}`} replace /> : <Navigate to="/login" replace />}
       />
-      <Route
-        path="*"
-        element={user ? <Navigate to={`/${user.role}`} replace /> : <Navigate to="/login" replace />}
-      />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

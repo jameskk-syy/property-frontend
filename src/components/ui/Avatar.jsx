@@ -7,13 +7,22 @@ const COLORS = [
 ]
 
 function initials(name = '') {
-  const parts = name.trim().split(' ')
-  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase()
+  let str = ''
+  if (typeof name === 'string') {
+    str = name
+  } else if (name && typeof name === 'object') {
+    str = name.message || name.name || name.full_name || ''
+  } else {
+    str = String(name || '')
+  }
+  const parts = str.trim().split(/\s+/)
+  return (((parts[0]?.[0] || '') + (parts[1]?.[0] || '')) || 'U').toUpperCase()
 }
 
 function hash(str) {
+  const s = typeof str === 'string' ? str : (str && typeof str === 'object' ? str.message || str.name || '' : String(str || ''))
   let h = 0
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
   return h
 }
 

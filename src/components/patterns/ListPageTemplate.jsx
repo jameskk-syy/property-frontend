@@ -2,6 +2,7 @@ import PageHeader from '../ui/PageHeader'
 import StatCard from '../ui/StatCard'
 import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
+import { StatCardsSkeleton } from '../ui/Skeleton'
 
 /**
  * Nearly every "management" screen in the design set is the same shape:
@@ -22,6 +23,7 @@ export default function ListPageTemplate({
   emptyMessage,
   tableActions,
   onRowClick,
+  loading = false,
   children,
 }) {
   return (
@@ -29,11 +31,15 @@ export default function ListPageTemplate({
       <PageHeader title={title} description={description} actions={actions} />
 
       {stats.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {stats.map((s) => (
-            <StatCard key={s.label} {...s} />
-          ))}
-        </div>
+        loading ? (
+          <div className="mb-6"><StatCardsSkeleton count={stats.length} /></div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {stats.map((s) => (
+              <StatCard key={s.label} {...s} />
+            ))}
+          </div>
+        )
       )}
 
       {children}
@@ -47,6 +53,7 @@ export default function ListPageTemplate({
           emptyMessage={emptyMessage}
           rightActions={tableActions}
           onRowClick={onRowClick}
+          loading={loading}
         />
       </Card>
     </div>
