@@ -10,6 +10,8 @@ import { StatCardsSkeleton } from '../ui/Skeleton'
  * table. Rather than rebuild that per page, each page just configures this
  * template with its own data/columns — which is what keeps 20+ admin pages
  * small and consistent.
+ * 
+ * Server-side pagination: pass serverPagination, onPageChange, onSearch props.
  */
 export default function ListPageTemplate({
   title,
@@ -25,6 +27,10 @@ export default function ListPageTemplate({
   onRowClick,
   loading = false,
   children,
+  // Server-side pagination props
+  serverPagination = null,
+  onPageChange = null,
+  onSearch = null,
 }) {
   return (
     <div>
@@ -54,6 +60,9 @@ export default function ListPageTemplate({
           rightActions={tableActions}
           onRowClick={onRowClick}
           loading={loading}
+          serverPagination={serverPagination}
+          onPageChange={onPageChange}
+          onSearch={onSearch}
         />
       </Card>
     </div>

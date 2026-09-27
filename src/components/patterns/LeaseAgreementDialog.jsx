@@ -108,6 +108,7 @@ export default function LeaseAgreementDialog({
   tenant = {},
   caretakerName = '',
   submitting = false,
+  title = 'Tenancy Agreement',
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const [tenantSig, setTenantSig] = useState('')
@@ -153,7 +154,7 @@ export default function LeaseAgreementDialog({
             <FileText size={18} />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Tenancy Agreement — Annex A</h2>
+            <h2 className="text-base font-semibold text-slate-900">{title} — Annex A</h2>
             <p className="text-xs text-slate-500">Review and sign to complete onboarding for {tenant.name || 'the tenant'}.</p>
           </div>
         </div>

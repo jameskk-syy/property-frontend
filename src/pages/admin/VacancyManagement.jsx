@@ -17,18 +17,23 @@ export default function VacancyManagement() {
 
   useEffect(() => {
     let mounted = true
-    api.getUnits().then((units) => {
-      if (mounted && Array.isArray(units)) {
-        const vacantUnits = units.filter(u => u.status === 'Vacant').map((u, i) => ({
-          id: `V-0${i + 1}`,
-          property: u.property,
-          unit: u.unit,
-          rent: u.rent,
-          listedOn: '2026-09-01',
-          views: 0,
-          leads: 0
-        }))
-        setVacancies(vacantUnits)
+    // Fetch all vacant units (use large page size to get all)
+    api.getUnits(null, { page: 1, pageSize: 100 }).then((result) => {
+      if (mounted) {
+        // Handle paginated response: { data: [...], pagination: {...} }
+        const units = result?.data || result || []
+        if (Array.isArray(units)) {
+          const vacantUnits = units.filter(u => u.status === 'Vacant').map((u, i) => ({
+            id: u.id || `V-${String(i + 1).padStart(2, '0')}`,
+            property: u.property,
+            unit: u.number || u.unit,
+            rent: u.rent,
+            listedOn: '2026-09-01',
+            views: 0,
+            leads: 0
+          }))
+          setVacancies(vacantUnits)
+        }
       }
     }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
@@ -79,17 +84,19 @@ export default function VacancyManagement() {
         onSubmit={handleSubmit}
         submitLabel="List Vacancy"
       >
-        <Field label="Property">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
-            {properties.map((p) => <option key={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Unit">
-          <TextInput required value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. C2" />
-        </Field>
-        <Field label="Monthly rent (KSh)">
-          <TextInput type="number" required value={form.rent} onChange={(e) => setForm({ ...form, rent: e.target.value })} placeholder="32000" />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Property">
+            <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+              {properties.map((p) => <option key={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Unit">
+            <TextInput required value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. C2" />
+          </Field>
+          <Field label="Monthly rent (KSh)">
+            <TextInput type="number" required value={form.rent} onChange={(e) => setForm({ ...form, rent: e.target.value })} placeholder="32000" />
+          </Field>
+        </div>
       </FormModal>
     </>
   )

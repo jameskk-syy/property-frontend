@@ -22,10 +22,14 @@ export default function PropertyUnitManagement() {
 
   useEffect(() => {
     let mounted = true
-    Promise.allSettled([api.getProperties(), api.getUnits()]).then(([p, u]) => {
+    Promise.allSettled([api.getProperties(), api.getUnits(null, { page: 1, pageSize: 100 })]).then(([p, u]) => {
       if (!mounted) return
       if (p.status === 'fulfilled' && Array.isArray(p.value)) setPropList(p.value)
-      if (u.status === 'fulfilled' && Array.isArray(u.value)) setUnitList(u.value)
+      // Handle paginated response: { data: [...], pagination: {...} }
+      if (u.status === 'fulfilled') {
+        const unitData = u.value?.data || u.value || []
+        if (Array.isArray(unitData)) setUnitList(unitData)
+      }
       setLoading(false)
     })
     return () => { mounted = false }
@@ -58,8 +62,8 @@ export default function PropertyUnitManagement() {
   ]
 
   const unitColumns = [
-    { key: 'unit', header: 'Unit', render: (r) => <span className="font-medium text-slate-800">{r.property} · {r.unit}</span> },
-    { key: 'bedrooms', header: 'Bedrooms' },
+    { key: 'unit', header: 'Unit', render: (r) => <span className="font-medium text-slate-800">{r.property} · {r.number || r.unit}</span> },
+    { key: 'type', header: 'Type', render: (r) => r.type || '—' },
     { key: 'tenant', header: 'Tenant' },
     { key: 'rent', header: 'Rent', render: (r) => formatKsh(r.rent) },
     { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },

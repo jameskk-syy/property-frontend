@@ -32,20 +32,35 @@ export default function ImportTenantsModal({ open, onClose, onImport }) {
   const [errors, setErrors] = useState([])
   const [importing, setImporting] = useState(false)
   const [properties, setProperties] = useState([])
+  const [defaultProperty, setDefaultProperty] = useState(null) // caretaker's default property
   const [units, setUnits] = useState({}) // { propertyId: [units] }
 
-  // Load properties on open
+  // Load properties on open and auto-select first property for caretaker
   useEffect(() => {
     if (open) {
-      api.getMyProperties().then(setProperties).catch(() => {})
+      api.getMyProperties().then((res) => {
+        const list = res?.data || res || []
+        setProperties(list)
+        // Auto-select first property if caretaker has only one assigned
+        if (list.length === 1) {
+          setDefaultProperty(list[0].id)
+          // Pre-load units for the default property
+          loadUnitsForProperty(list[0].id)
+        } else if (list.length > 0) {
+          setDefaultProperty(list[0].id)
+          loadUnitsForProperty(list[0].id)
+        }
+      }).catch(() => {})
     }
   }, [open])
 
-  // Load units when property changes for a row
+  // Load units when property changes for a row - handles paginated response
   const loadUnitsForProperty = async (propertyId) => {
     if (!propertyId || units[propertyId]) return
     try {
-      const unitList = await api.getUnits(propertyId)
+      // Load all units with a large page size for the dropdown
+      const result = await api.getUnits(propertyId, { pageSize: 100 })
+      const unitList = result?.data || result || []
       setUnits((prev) => ({ ...prev, [propertyId]: unitList }))
     } catch {}
   }
@@ -54,6 +69,7 @@ export default function ImportTenantsModal({ open, onClose, onImport }) {
     setRows([])
     setErrors([])
     setImporting(false)
+    setDefaultProperty(null)
   }
 
   const close = () => {
@@ -133,7 +149,7 @@ export default function ImportTenantsModal({ open, onClose, onImport }) {
         phone,
         email: at(cols, iEmail, 3),
         income_range: at(cols, iIncome, 4),
-        property: at(cols, iProperty, 5),
+        property: at(cols, iProperty, 5) || defaultProperty || '', // auto-populate caretaker's property
         unit: at(cols, iUnit, 6),
         rent: at(cols, iRent, 7),
         deposit: at(cols, iDeposit, 8),
@@ -143,6 +159,10 @@ export default function ImportTenantsModal({ open, onClose, onImport }) {
 
     setRows(parsed)
     setErrors(rowErrors)
+    // Pre-load units for the default property if rows use it
+    if (defaultProperty && parsed.some(r => r.property === defaultProperty)) {
+      loadUnitsForProperty(defaultProperty)
+    }
   }
 
   const handleFile = (e) => {
@@ -191,7 +211,7 @@ export default function ImportTenantsModal({ open, onClose, onImport }) {
   }
 
   return (
-    <Modal  open={open} onClose={close} title="Import Tenants" description="Bulk-create tenants from a CSV file. For existing tenants who already paid, check 'Already Paid' to mark them as migrated." size="md">
+    <Modal  open={open} onClose={close} title="Import Tenants" description="Bulk-create tenants from a CSV file. For existing tenants who already paid, check 'Already Paid' to mark them as migrated." size="2xl">
       <div className="space-y-4 ">
         <div className="flex flex-wrap items-center gap-2">
           <input type="file" ref={fileInputRef} onChange={handleFile} accept=".csv,.txt" className="hidden" />

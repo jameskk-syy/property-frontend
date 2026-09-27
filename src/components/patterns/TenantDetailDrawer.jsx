@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Save, FileSignature, Plus, Home, Loader2 } from 'lucide-react'
 import Button from '../ui/Button'
+import Badge from '../ui/Badge'
 import { Field, TextInput, Select } from '../ui/Field'
 import SearchSelect from '../ui/SearchSelect'
+import AsyncSearchSelect from '../ui/AsyncSearchSelect'
 import IdCapture from '../ui/IdCapture'
 import LeaseAgreementDialog from './LeaseAgreementDialog'
 import { useToast } from '../../context/ToastContext'
@@ -66,15 +68,35 @@ export default function TenantDetailDrawer({ open, tenantId, onClose, onSaved })
   // Load caretaker properties for the sign-lease unit picker.
   useEffect(() => {
     if (!open) return
-    api.getMyProperties().then((res) => setProperties(Array.isArray(res) ? res : [])).catch(() => {})
+    api.getMyProperties().then((res) => {
+      const list = res?.data || res || []
+      setProperties(Array.isArray(list) ? list : [])
+    }).catch(() => {})
   }, [open])
 
-  // Load vacant units when a property is chosen for signing.
+  // Load vacant units when a property is chosen for signing - handles paginated response
   useEffect(() => {
     if (!signProperty) { setUnits([]); return }
-    api.getUnits(signProperty)
-      .then((res) => setUnits((res || []).filter((u) => u.status === 'Vacant')))
+    api.getUnits(signProperty, { pageSize: 100 })
+      .then((res) => {
+        const unitList = res?.data || res || []
+        setUnits(unitList.filter((u) => u.status === 'Vacant'))
+      })
       .catch(() => setUnits([]))
+  }, [signProperty])
+
+  // Search units from backend
+  const searchUnits = useCallback(async (query) => {
+    if (!signProperty) return []
+    try {
+      const res = await api.getUnits(signProperty, { search: query, pageSize: 50 })
+      const unitList = res?.data || res || []
+      return unitList
+        .filter((u) => u.status === 'Vacant')
+        .map((u) => ({ value: u.id, label: `${u.number} · ${u.type}` }))
+    } catch {
+      return []
+    }
   }, [signProperty])
 
   if (!open) return null
@@ -266,48 +288,94 @@ export default function TenantDetailDrawer({ open, tenantId, onClose, onSaved })
                 <div className="flex items-center gap-2">
                   <Home size={16} className="text-brand-500" />
                   <h4 className="text-sm font-semibold text-slate-700">
-                    {detail?.lease ? 'Re-assign unit / re-sign lease' : 'Assign unit & sign lease'}
+                    {detail?.lease ? 'Tenant Agreement' : 'Assign unit & sign agreement'}
                   </h4>
                 </div>
-                {detail?.is_signed && (
-                  <p className="text-xs text-emerald-600">This lease is already signed. Re-signing replaces the signed agreement.</p>
+                
+                {/* If tenant has an existing lease, show option to sign it */}
+                {detail?.lease && (
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">
+                          Unit {detail.unit_label || detail.unit}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Rent: KSh {detail.rent_amount?.toLocaleString() || '—'} · 
+                          Deposit: KSh {detail.deposit_amount?.toLocaleString() || '—'}
+                        </p>
+                      </div>
+                      <Badge tone={detail.is_signed ? 'green' : 'orange'}>
+                        {detail.is_signed ? 'Signed' : 'Not Signed'}
+                      </Badge>
+                    </div>
+                    <Button 
+                      variant={detail.is_signed ? 'secondary' : 'primary'}
+                      icon={FileSignature} 
+                      onClick={() => {
+                        // Use existing lease details
+                        setSignProperty(detail.property || '')
+                        setSignUnit(detail.unit || '')
+                        setSignRent(detail.rent_amount || '')
+                        setSignDeposit(detail.deposit_amount || '')
+                        setLeaseOpen(true)
+                      }} 
+                      disabled={signing}
+                      className="w-full"
+                    >
+                      {detail.is_signed ? 'Re-sign Agreement' : 'Sign Agreement'}
+                    </Button>
+                  </div>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Field label="Property">
-                    <SearchSelect
-                      value={signProperty}
-                      onChange={(val) => { setSignProperty(val); setSignUnit('') }}
-                      options={properties.map((p) => ({ value: p.id || p.name, label: p.name }))}
-                      placeholder="Select property…"
-                      searchPlaceholder="Search…"
-                      emptyMessage="No properties assigned to you"
-                    />
-                  </Field>
-                  <Field label="Vacant unit">
-                    <SearchSelect
-                      value={signUnit}
-                      onChange={(val) => {
-                        setSignUnit(val)
-                        const u = units.find((x) => x.id === val)
-                        if (u) { setSignRent(u.rent || ''); setSignDeposit(u.deposit || u.rent || '') }
-                      }}
-                      options={units.map((u) => ({ value: u.id, label: `${u.number} · ${u.type}` }))}
-                      placeholder={signProperty ? 'Select unit…' : 'Pick a property first'}
-                      searchPlaceholder="Search…"
-                      emptyMessage="No vacant units"
-                    />
-                  </Field>
-                  <Field label="Rent (KSh)">
-                    <TextInput type="number" value={signRent} onChange={(e) => setSignRent(e.target.value)} />
-                  </Field>
-                  <Field label="Deposit (KSh)">
-                    <TextInput type="number" value={signDeposit} onChange={(e) => setSignDeposit(e.target.value)} />
-                  </Field>
-                </div>
-                <div className="flex justify-end">
-                  <Button variant="secondary" icon={detail?.lease ? FileSignature : Plus} onClick={openSign} disabled={signing}>
-                    {detail?.lease ? 'Re-sign Lease' : 'Assign & Sign Lease'}
-                  </Button>
+
+                {detail?.is_signed && (
+                  <p className="text-xs text-emerald-600">This agreement is already signed. Re-signing replaces the existing signature.</p>
+                )}
+                
+                {/* Option to assign a different unit */}
+                <div className={detail?.lease ? 'pt-3 border-t border-slate-100' : ''}>
+                  {detail?.lease && (
+                    <p className="text-xs text-slate-500 mb-3">Or assign a different unit:</p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Property">
+                      <SearchSelect
+                        value={signProperty}
+                        onChange={(val) => { setSignProperty(val); setSignUnit('') }}
+                        options={properties.map((p) => ({ value: p.id || p.name, label: p.name }))}
+                        placeholder="Select property…"
+                        searchPlaceholder="Search…"
+                        emptyMessage="No properties assigned to you"
+                      />
+                    </Field>
+                    <Field label="Vacant unit">
+                      <AsyncSearchSelect
+                        value={signUnit}
+                        onChange={(val) => {
+                          setSignUnit(val)
+                          const u = units.find((x) => x.id === val)
+                          if (u) { setSignRent(u.rent || ''); setSignDeposit(u.deposit || u.rent || '') }
+                        }}
+                        onSearch={searchUnits}
+                        initialOptions={units.map((u) => ({ value: u.id, label: `${u.number} · ${u.type}` }))}
+                        placeholder={signProperty ? 'Search unit…' : 'Pick a property first'}
+                        searchPlaceholder="Type to search units…"
+                        emptyMessage="No vacant units found"
+                        disabled={!signProperty}
+                      />
+                    </Field>
+                    <Field label="Rent (KSh)">
+                      <TextInput type="number" value={signRent} onChange={(e) => setSignRent(e.target.value)} />
+                    </Field>
+                    <Field label="Deposit (KSh)">
+                      <TextInput type="number" value={signDeposit} onChange={(e) => setSignDeposit(e.target.value)} />
+                    </Field>
+                  </div>
+                  <div className="flex justify-end mt-3">
+                    <Button variant="secondary" icon={Plus} onClick={openSign} disabled={signing || !signProperty || !signUnit}>
+                      {detail?.lease ? 'Reassign & Sign' : 'Assign & Sign Agreement'}
+                    </Button>
+                  </div>
                 </div>
               </section>
             </div>
@@ -321,6 +389,7 @@ export default function TenantDetailDrawer({ open, tenantId, onClose, onSaved })
         onComplete={handleLeaseComplete}
         submitting={signing}
         caretakerName={user?.name || ''}
+        title="Tenant Agreement"
         tenant={{
           name: form?.tenant_name,
           idNumber: form?.national_id,

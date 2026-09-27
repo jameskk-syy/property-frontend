@@ -34,7 +34,10 @@ export default function PaymentReconciliation() {
   useEffect(() => {
     load()
     api.getProperties().then((res) => { if (res) setProperties(res) }).catch(() => {})
-    api.getTenants().then((res) => { if (res) setTenants(res) }).catch(() => {})
+    api.getTenants({ pageSize: 100 }).then((res) => { 
+      if (res && res.data) setTenants(res.data)
+      else if (Array.isArray(res)) setTenants(res)
+    }).catch(() => {})
   }, [])
 
   const total = rows.reduce((s, p) => s + (p.amount || 0), 0)
@@ -104,21 +107,23 @@ export default function PaymentReconciliation() {
         onSubmit={handleMatch}
         submitLabel={saving ? 'Matching…' : 'Match & Record'}
       >
-        <Field label="Property">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
-            <option value="">Select property…</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Tenant (optional)">
-          <Select value={form.tenant} onChange={(e) => setForm({ ...form, tenant: e.target.value })}>
-            <option value="">Unassigned</option>
-            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Amount (KSh)">
-          <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Property">
+            <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+              <option value="">Select property…</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Tenant (optional)">
+            <Select value={form.tenant} onChange={(e) => setForm({ ...form, tenant: e.target.value })}>
+              <option value="">Unassigned</option>
+              {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Amount (KSh)">
+            <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          </Field>
+        </div>
       </FormModal>
     </>
   )

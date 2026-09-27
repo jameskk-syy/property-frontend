@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { UserCog, Building2, Plus, Eye, Phone, Mail, Hash, Upload } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
@@ -11,18 +11,21 @@ import Avatar from '../../components/ui/Avatar'
 import { Field, TextInput } from '../../components/ui/Field'
 import MultiSelect from '../../components/ui/MultiSelect'
 import { useToast } from '../../context/ToastContext'
-import { landlords as initialLandlords } from '../../data/mockData'
 import { api } from '../../api/client'
 
 export default function LandlordManagement() {
   const [searchParams] = useSearchParams()
   const { showToast } = useToast()
-  const [landlords, setLandlords] = useState(initialLandlords)
+  const [landlords, setLandlords] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(searchParams.get('new') === 'true')
   const [importOpen, setImportOpen] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
   const [form, setForm] = useState({
     landlordId: '',
     name: '',
@@ -31,24 +34,58 @@ export default function LandlordManagement() {
     properties: []
   })
 
-  useEffect(() => {
-    let mounted = true
-    api.getLandlords().then((res) => {
-      if (mounted && res && res.length > 0) setLandlords(res)
-    }).catch(() => {}).finally(() => {
-      if (mounted) setLoading(false)
-    })
-    api.getProperties().then((res) => {
-      if (mounted && res) setProperties(res)
-    }).catch(() => {})
-    return () => { mounted = false }
+  // Fetch landlords with pagination
+  const fetchLandlords = useCallback(async (page = 1, size = 8, search = '') => {
+    setLoading(true)
+    try {
+      const res = await api.getLandlords({ page, pageSize: size, search })
+      if (res && res.data) {
+        setLandlords(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        // Backward compatibility
+        setLandlords(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch landlords:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchLandlords(1, pageSize, '')
+    api.getProperties().then((res) => {
+      if (res) setProperties(res)
+    }).catch(() => {})
+  }, [fetchLandlords, pageSize])
 
   useEffect(() => {
     if (searchParams.get('new') === 'true') {
       setOpen(true)
     }
   }, [searchParams])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchLandlords(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchLandlords(newPage, pageSize, searchQuery)
+    }
+  }, [fetchLandlords, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchLandlords(1, pageSize, query)
+  }, [fetchLandlords, pageSize])
 
   const resetForm = () => setForm({
     landlordId: '', name: '', phone: '', email: '', properties: []
@@ -59,12 +96,8 @@ export default function LandlordManagement() {
       showToast('Landlord name, phone number and email address are required.')
       return
     }
-    const selectedNames = properties
-      .filter((p) => form.properties.includes(p.id))
-      .map((p) => p.name)
     const selectedIds = form.properties
 
-    // Save to the backend first; only reflect success in the UI if it worked.
     try {
       const created = await api.createLandlord({
         landlord_name: form.name,
@@ -82,42 +115,17 @@ export default function LandlordManagement() {
         )
       )
 
-      setLandlords((prev) => [{
-        id: landlordId || form.landlordId,
-        name: form.name,
-        phone: form.phone,
-        email: form.email,
-        properties: form.properties.length,
-        propertyNames: selectedNames,
-        units: 0,
-        status: 'Active'
-      }, ...prev])
       showToast(`${form.name} added as a landlord.`)
       resetForm()
       setOpen(false)
+      // Refresh list
+      fetchLandlords(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err?.message || 'Could not save the landlord. Please try again.', 'error')
     }
   }
 
   const handleBulkImport = async (landlordRows) => {
-    // Optimistically add to the visible list.
-    const localRows = landlordRows.map((r, idx) => ({
-      id: r.landlord_id || `L-${String(landlords.length + idx + 1).padStart(2, '0')}`,
-      name: r.landlord_name,
-      phone: r.phone_number,
-      email: r.email_address,
-      properties: r.properties_owned
-        ? r.properties_owned.split(/[;,]/).map((s) => s.trim()).filter(Boolean).length
-        : 0,
-      propertyNames: r.properties_owned
-        ? r.properties_owned.split(/[;,]/).map((s) => s.trim()).filter(Boolean)
-        : [],
-      units: 0,
-      status: 'Active',
-    }))
-    setLandlords((prev) => [...localRows, ...prev])
-
     const result = await api.bulkCreateLandlords(landlordRows)
     const okCount = result.created.length
     const failCount = result.failed.length
@@ -126,9 +134,20 @@ export default function LandlordManagement() {
     } else if (okCount > 0 && failCount > 0) {
       showToast(`Imported ${okCount}, but ${failCount} failed. Check details and retry.`)
     } else if (failCount > 0) {
-      showToast('Could not save landlords to the server, but they are shown locally.')
+      showToast('Could not save landlords to the server.')
     }
+    // Refresh list
+    fetchLandlords(1, pageSize, searchQuery)
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -143,7 +162,7 @@ export default function LandlordManagement() {
         }
         loading={loading}
         stats={[
-          { label: 'Total Landlords', value: landlords.length, icon: UserCog },
+          { label: 'Total Landlords', value: pagination?.total || landlords.length, icon: UserCog },
           { label: 'Properties Managed', value: landlords.reduce((s, l) => s + (l.properties || 0), 0), icon: Building2, tone: 'blue' },
           { label: 'Units Managed', value: landlords.reduce((s, l) => s + (l.units || 0), 0), icon: Building2, tone: 'brand' },
         ]}
@@ -168,8 +187,10 @@ export default function LandlordManagement() {
           ) },
         ]}
         rows={landlords}
-        searchKeys={['name', 'phone', 'email']}
         searchPlaceholder="Search landlords…"
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <FormModal
@@ -180,32 +201,32 @@ export default function LandlordManagement() {
         onSubmit={handleSubmit}
         submitLabel="Add Landlord"
       >
-        <Field label="Landlord ID">
-          <TextInput
-            value={form.landlordId}
-            onChange={(e) => setForm({ ...form, landlordId: e.target.value })}
-            placeholder="e.g. L-01 (leave blank to auto-generate)"
-          />
-        </Field>
-        <Field label="Landlord name">
-          <TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Susan Njoroge" />
-        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Landlord ID">
+            <TextInput
+              value={form.landlordId}
+              onChange={(e) => setForm({ ...form, landlordId: e.target.value })}
+              placeholder="e.g. L-01 (leave blank to auto-generate)"
+            />
+          </Field>
+          <Field label="Landlord name">
+            <TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Susan Njoroge" />
+          </Field>
           <Field label="Phone number">
             <TextInput required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+254 7XX XXX XXX" />
           </Field>
           <Field label="Email address">
             <TextInput required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="landlord@email.com" />
           </Field>
+          <Field label="Properties owned (optional)" className="sm:col-span-2">
+            <MultiSelect
+              options={properties.map((p) => ({ value: p.id, label: p.name }))}
+              value={form.properties}
+              onChange={(vals) => setForm({ ...form, properties: vals })}
+              placeholder="Optionally link one or more properties…"
+            />
+          </Field>
         </div>
-        <Field label="Properties owned (optional)">
-          <MultiSelect
-            options={properties.map((p) => ({ value: p.id, label: p.name }))}
-            value={form.properties}
-            onChange={(vals) => setForm({ ...form, properties: vals })}
-            placeholder="Optionally link one or more properties…"
-          />
-        </Field>
       </FormModal>
 
       <ImportLandlordsModal
@@ -250,16 +271,8 @@ export default function LandlordManagement() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-400">
-                  {detail.properties > 0
-                    ? `${detail.properties} propert${detail.properties === 1 ? 'y' : 'ies'} linked.`
-                    : 'No properties linked to this landlord yet.'}
-                </p>
+                <p className="text-sm text-slate-400">No linked properties</p>
               )}
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
             </div>
           </div>
         )}
@@ -271,12 +284,10 @@ export default function LandlordManagement() {
 function DetailRow({ icon: Icon, label, value }) {
   return (
     <div className="flex items-start gap-2.5">
-      <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 flex items-center justify-center shrink-0">
-        <Icon size={15} />
-      </div>
-      <div className="min-w-0">
+      <Icon className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+      <div>
         <p className="text-xs text-slate-400">{label}</p>
-        <p className="text-sm font-medium text-slate-800 break-words">{value || '—'}</p>
+        <p className="text-sm font-medium text-slate-700">{value ?? '—'}</p>
       </div>
     </div>
   )

@@ -14,26 +14,62 @@ const EMPTY = { name: '', property: '', budget: '', startDate: '', endDate: '', 
 export default function ConstructionManagement() {
   const { showToast } = useToast()
   const [projects, setProjects] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [properties, setProperties] = useState([])
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
-  const [fundFor, setFundFor] = useState(null) // project row being funded
+  const [fundFor, setFundFor] = useState(null)
   const [fundForm, setFundForm] = useState({ sourceAccount: '', amount: '' })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
 
-  const loadProjects = useCallback(async () => {
+  // Fetch projects with pagination
+  const fetchProjects = useCallback(async (page = 1, size = 8, search = '') => {
     setLoading(true)
-    const res = await api.getConstructionProjectsV2().catch(() => [])
-    if (Array.isArray(res)) setProjects(res)
-    setLoading(false)
+    try {
+      const res = await api.getConstructionProjectsV2({ page, pageSize: size, search })
+      if (res && res.data) {
+        setProjects(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setProjects(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch projects:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
+  // Initial load
   useEffect(() => {
-    loadProjects()
+    fetchProjects(1, pageSize, '')
     api.getProperties().then((res) => { if (res?.length) setProperties(res) }).catch(() => {})
     api.getFundingSources().then((res) => setSources(res || [])).catch(() => {})
-  }, [loadProjects])
+  }, [fetchProjects, pageSize])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchProjects(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchProjects(newPage, pageSize, searchQuery)
+    }
+  }, [fetchProjects, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchProjects(1, pageSize, query)
+  }, [fetchProjects, pageSize])
 
   const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0)
   const totalFunded = projects.reduce((s, p) => s + (p.funded || 0), 0)
@@ -52,7 +88,7 @@ export default function ConstructionManagement() {
         status: form.status,
       })
       showToast(`Project "${form.name}" created.`)
-      await loadProjects()
+      fetchProjects(currentPage, pageSize, searchQuery)
       setOpen(false)
       setForm(EMPTY)
     } catch (err) {
@@ -77,12 +113,21 @@ export default function ConstructionManagement() {
         amount: fundForm.amount,
       })
       showToast(`Funded ${formatKsh(Number(fundForm.amount))} into "${fundFor.name}".`)
-      await loadProjects()
+      fetchProjects(currentPage, pageSize, searchQuery)
       setFundFor(null)
     } catch (err) {
       showToast(err.message || 'Funding failed.', 'error')
     }
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -92,7 +137,7 @@ export default function ConstructionManagement() {
         loading={loading}
         actions={<Button icon={Plus} onClick={() => setOpen(true)}>New Project</Button>}
         stats={[
-          { label: 'Total Projects', value: projects.length, icon: HardHat },
+          { label: 'Total Projects', value: pagination?.total || projects.length, icon: HardHat },
           { label: 'Active', value: active.length, icon: Clock, tone: 'blue' },
           { label: 'Total Funded', value: formatKsh(totalFunded), icon: Wallet, tone: 'brand' },
           { label: 'Total Spent', value: formatKsh(totalSpent), icon: TrendingDown, tone: 'orange' },
@@ -112,25 +157,35 @@ export default function ConstructionManagement() {
           ) },
         ]}
         rows={projects}
-        searchKeys={['name', 'property', 'status']}
         searchPlaceholder="Search projects…"
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <FormModal title="New Construction Project" open={open} onClose={() => setOpen(false)} onSubmit={handleSubmit}>
-        <Field label="Project Name">
-          <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Green Court Apartments (New Build)" />
-        </Field>
-        <Field label="Property (optional)">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
-            <option value="">— None (new build, not linked to a property) —</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          <p className="text-xs text-slate-400 mt-1.5">Leave empty for a brand-new apartment/property. The project is tied to your organization.</p>
-        </Field>
-        <Field label="Budget (KSh)">
-          <TextInput type="number" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} placeholder="500000" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Project Name" className="sm:col-span-2">
+            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Green Court Apartments (New Build)" />
+          </Field>
+          <Field label="Property (optional)" className="sm:col-span-2">
+            <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+              <option value="">— None (new build, not linked to a property) —</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+            <p className="text-xs text-slate-400 mt-1.5">Leave empty for a brand-new apartment/property. The project is tied to your organization.</p>
+          </Field>
+          <Field label="Budget (KSh)">
+            <TextInput type="number" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} placeholder="500000" />
+          </Field>
+          <Field label="Status">
+            <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+              <option value="Planning">Planning</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="On Hold">On Hold</option>
+            </Select>
+          </Field>
           <Field label="Start Date">
             <TextInput type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
           </Field>
@@ -138,14 +193,6 @@ export default function ConstructionManagement() {
             <TextInput type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
           </Field>
         </div>
-        <Field label="Status">
-          <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            <option value="Planning">Planning</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="On Hold">On Hold</option>
-          </Select>
-        </Field>
       </FormModal>
 
       <FormModal
@@ -157,21 +204,23 @@ export default function ConstructionManagement() {
         submitLabel="Transfer Funds"
       >
         {fundFor && (
-          <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-sm text-slate-600 grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-sm text-slate-600 grid grid-cols-3 gap-2 mb-4">
             <div><p className="text-xs text-slate-400">Funded</p><p className="font-semibold text-emerald-600">{formatKsh(fundFor.funded || 0)}</p></div>
             <div><p className="text-xs text-slate-400">Spent</p><p className="font-semibold">{formatKsh(fundFor.spent || 0)}</p></div>
             <div><p className="text-xs text-slate-400">Available</p><p className="font-semibold">{formatKsh(fundFor.available || 0)}</p></div>
           </div>
         )}
-        <Field label="Source Account (Bank / Cash)">
-          <Select value={fundForm.sourceAccount} onChange={(e) => setFundForm({ ...fundForm, sourceAccount: e.target.value })}>
-            <option value="">— Select account —</option>
-            {sources.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
-          </Select>
-        </Field>
-        <Field label="Amount (KSh)">
-          <TextInput type="number" value={fundForm.amount} onChange={(e) => setFundForm({ ...fundForm, amount: e.target.value })} placeholder="200000" />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Source Account (Bank / Cash)">
+            <Select value={fundForm.sourceAccount} onChange={(e) => setFundForm({ ...fundForm, sourceAccount: e.target.value })}>
+              <option value="">— Select account —</option>
+              {sources.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
+            </Select>
+          </Field>
+          <Field label="Amount (KSh)">
+            <TextInput type="number" value={fundForm.amount} onChange={(e) => setFundForm({ ...fundForm, amount: e.target.value })} placeholder="200000" />
+          </Field>
+        </div>
       </FormModal>
     </>
   )

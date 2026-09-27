@@ -1,16 +1,24 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import EmptyState from './EmptyState'
 import { TableSkeleton } from './Skeleton'
 
-const PAGE_SIZE = 8
+const DEFAULT_PAGE_SIZE = 8
+const PAGE_SIZE_OPTIONS = [8, 25, 50, 75, 100]
 
 /**
  * Generic table used by nearly every list page in the app.
- * columns: [{ key, header, render?(row) }]
- * rows: array of plain objects
- * searchKeys: which fields to match against the search box
- * onRowClick(row): optional — makes rows clickable/navigable
+ * 
+ * Props:
+ * - columns: [{ key, header, render?(row), width?, align? }]
+ * - rows: array of plain objects (for client-side mode)
+ * - searchKeys: which fields to match against the search box (client-side)
+ * - onRowClick(row): optional — makes rows clickable/navigable
+ * 
+ * Server-side pagination props:
+ * - serverPagination: { page, pageSize, total, hasNext, hasPrev }
+ * - onPageChange(page, pageSize): callback when page or pageSize changes
+ * - onSearch(query): callback when search query changes (debounced)
  */
 export default function DataTable({
   columns,
@@ -22,41 +30,110 @@ export default function DataTable({
   onRowClick,
   paginate = true,
   loading = false,
+  // Server-side pagination props
+  serverPagination = null,
+  onPageChange = null,
+  onSearch = null,
 }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
+  const [localPageSize, setLocalPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
 
+  // Debounce search for server-side mode
+  useEffect(() => {
+    if (!onSearch) return
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query, onSearch])
+
+  // Trigger server search when debounced query changes
+  useEffect(() => {
+    if (onSearch && debouncedQuery !== undefined) {
+      onSearch(debouncedQuery)
+    }
+  }, [debouncedQuery, onSearch])
+
+  // Server-side mode detection
+  const isServerSide = serverPagination !== null && onPageChange !== null
+
+  // Client-side filtering (only when not server-side)
   const filtered = useMemo(() => {
+    if (isServerSide) return rows // Server already filtered
     if (!query || searchKeys.length === 0) return rows
     const q = query.toLowerCase()
     return rows.filter((row) =>
       searchKeys.some((key) => String(row[key] ?? '').toLowerCase().includes(q))
     )
-  }, [rows, query, searchKeys])
+  }, [rows, query, searchKeys, isServerSide])
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount - 1)
-  const visible = paginate ? filtered.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE) : filtered
+  // Pagination calculations
+  const pageSize = isServerSide ? (serverPagination.pageSize || DEFAULT_PAGE_SIZE) : localPageSize
+  const total = isServerSide ? serverPagination.total : filtered.length
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  
+  // Current page (0-indexed internally)
+  const currentPage = isServerSide 
+    ? (serverPagination.page - 1) // Server sends 1-indexed
+    : Math.min(page, pageCount - 1)
+  
+  // Visible rows
+  const visible = isServerSide 
+    ? rows // Server already paginated
+    : (paginate ? filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize) : filtered)
 
-  const changeQuery = (v) => {
+  // Handle query change
+  const changeQuery = useCallback((v) => {
     setQuery(v)
-    setPage(0)
-  }
+    if (!isServerSide) {
+      setPage(0)
+    }
+    // Server-side search is handled by debounce effect
+  }, [isServerSide])
 
+  // Handle page change
+  const handlePageChange = useCallback((newPage) => {
+    if (isServerSide) {
+      onPageChange(newPage + 1, pageSize) // Convert to 1-indexed for server
+    } else {
+      setPage(newPage)
+    }
+  }, [isServerSide, onPageChange, pageSize])
+
+  // Handle page size change
+  const handlePageSizeChange = useCallback((newSize) => {
+    const size = Number(newSize)
+    if (isServerSide) {
+      onPageChange(1, size) // Reset to page 1 when changing size
+    } else {
+      setLocalPageSize(size)
+      setPage(0)
+    }
+  }, [isServerSide, onPageChange])
+
+  // Page numbers for display
   const pageNumbers = useMemo(() => {
     const nums = []
     for (let i = 0; i < pageCount; i++) nums.push(i)
-    // Keep it compact: first, last, current +/-1, with ellipses elsewhere
     if (pageCount <= 7) return nums
     const set = new Set([0, pageCount - 1, currentPage, currentPage - 1, currentPage + 1])
-    return nums.filter((n) => set.has(n))
+    return nums.filter((n) => set.has(n) && n >= 0 && n < pageCount)
   }, [pageCount, currentPage])
+
+  // Calculate display range
+  const startItem = total > 0 ? currentPage * pageSize + 1 : 0
+  const endItem = Math.min((currentPage + 1) * pageSize, total)
+
+  // Has search capability
+  const hasSearch = isServerSide ? onSearch !== null : searchKeys.length > 0
 
   return (
     <div>
-      {(searchKeys.length > 0 || rightActions) && (
+      {(hasSearch || rightActions) && (
         <div className="flex items-center justify-between gap-3 mb-4">
-          {searchKeys.length > 0 ? (
+          {hasSearch ? (
             <div className="relative w-full max-w-xs">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -77,7 +154,7 @@ export default function DataTable({
         <div className="-mx-5">
           <TableSkeleton columns={columns.length} />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : (visible.length === 0 && total === 0) ? (
         <EmptyState message={emptyMessage} />
       ) : (
         <>
@@ -125,52 +202,71 @@ export default function DataTable({
             </table>
           </div>
 
-          {paginate && pageCount > 1 && (
-            <div className="flex items-center justify-between pt-4 mt-1">
-              <p className="text-xs text-slate-500">
-                Showing <span className="font-medium text-slate-700">{currentPage * PAGE_SIZE + 1}</span>–
-                <span className="font-medium text-slate-700">{Math.min((currentPage + 1) * PAGE_SIZE, filtered.length)}</span> of{' '}
-                <span className="font-medium text-slate-700">{filtered.length}</span>
-              </p>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={currentPage === 0}
-                  className="h-8 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center gap-1 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:border-slate-300"
-                >
-                  <ChevronLeft size={15} /> Prev
-                </button>
-
-                <div className="flex items-center gap-1 mx-1">
-                  {pageNumbers.map((n, idx) => {
-                    const prev = pageNumbers[idx - 1]
-                    const showEllipsis = prev != null && n - prev > 1
-                    return (
-                      <span key={n} className="flex items-center gap-1">
-                        {showEllipsis && <span className="text-slate-300 px-0.5">…</span>}
-                        <button
-                          onClick={() => setPage(n)}
-                          className={`h-8 w-8 rounded-lg text-sm font-medium transition-colors ${
-                            n === currentPage
-                              ? 'bg-brand-500 text-white shadow-sm'
-                              : 'text-slate-600 border border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                          }`}
-                        >
-                          {n + 1}
-                        </button>
-                      </span>
-                    )
-                  })}
+          {paginate && (total > 0 || pageCount > 1) && (
+            <div className="flex items-center justify-between pt-4 mt-1 flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-slate-500">
+                  Showing <span className="font-medium text-slate-700">{startItem}</span>–
+                  <span className="font-medium text-slate-700">{endItem}</span> of{' '}
+                  <span className="font-medium text-slate-700">{total}</span>
+                </p>
+                {/* Page Size Selector */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-500">Show</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => handlePageSizeChange(e.target.value)}
+                    className="h-7 px-2 text-xs rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                  >
+                    {PAGE_SIZE_OPTIONS.map(size => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-slate-500">per page</span>
                 </div>
-
-                <button
-                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                  disabled={currentPage >= pageCount - 1}
-                  className="h-8 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center gap-1 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:border-slate-300"
-                >
-                  Next <ChevronRight size={15} />
-                </button>
               </div>
+              
+              {pageCount > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 0 || (isServerSide && !serverPagination.hasPrev)}
+                    className="h-8 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center gap-1 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:border-slate-300"
+                  >
+                    <ChevronLeft size={15} /> Prev
+                  </button>
+
+                  <div className="flex items-center gap-1 mx-1">
+                    {pageNumbers.map((n, idx) => {
+                      const prev = pageNumbers[idx - 1]
+                      const showEllipsis = prev != null && n - prev > 1
+                      return (
+                        <span key={n} className="flex items-center gap-1">
+                          {showEllipsis && <span className="text-slate-300 px-0.5">…</span>}
+                          <button
+                            onClick={() => handlePageChange(n)}
+                            className={`h-8 w-8 rounded-lg text-sm font-medium transition-colors ${
+                              n === currentPage
+                                ? 'bg-brand-500 text-white shadow-sm'
+                                : 'text-slate-600 border border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                            }`}
+                          >
+                            {n + 1}
+                          </button>
+                        </span>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= pageCount - 1 || (isServerSide && !serverPagination.hasNext)}
+                    className="h-8 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center gap-1 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:border-slate-300"
+                  >
+                    Next <ChevronRight size={15} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

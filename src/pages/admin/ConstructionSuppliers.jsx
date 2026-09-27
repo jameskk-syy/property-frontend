@@ -19,19 +19,56 @@ const EMPTY = { name: '', category: 'General', phone: '', notes: '' }
 export default function ConstructionSuppliers() {
   const { showToast } = useToast()
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
 
-  const load = useCallback(() => {
+  // Fetch vendors with pagination
+  const fetchVendors = useCallback(async (page = 1, size = 8, search = '') => {
     setLoading(true)
-    return api.getVendors()
-      .then((res) => setRows(res || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    try {
+      const res = await api.getVendors({ page, pageSize: size, search })
+      if (res && res.data) {
+        setRows(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setRows(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch vendors:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  // Initial load
+  useEffect(() => {
+    fetchVendors(1, pageSize, '')
+  }, [fetchVendors, pageSize])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchVendors(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchVendors(newPage, pageSize, searchQuery)
+    }
+  }, [fetchVendors, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchVendors(1, pageSize, query)
+  }, [fetchVendors, pageSize])
 
   const handleCreate = async () => {
     if (!form.name) {
@@ -43,11 +80,20 @@ export default function ConstructionSuppliers() {
       showToast(res?.created === false ? `Supplier "${form.name}" updated.` : `Supplier "${form.name}" onboarded.`)
       setOpen(false)
       setForm(EMPTY)
-      load()
+      fetchVendors(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Could not save the supplier.', 'error')
     }
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -61,7 +107,7 @@ export default function ConstructionSuppliers() {
         <div className="mb-6"><StatCardsSkeleton count={2} /></div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <StatCard label="Suppliers" value={rows.length} icon={Store} />
+          <StatCard label="Suppliers" value={pagination?.total || rows.length} icon={Store} />
           <StatCard label="Total Purchases" value={rows.reduce((s, v) => s + (v.purchases || 0), 0)} icon={Package} tone="blue" />
         </div>
       )}
@@ -82,9 +128,11 @@ export default function ConstructionSuppliers() {
             { key: 'notes', header: 'Notes', render: (r) => r.notes || '—' },
           ]}
           rows={rows}
-          searchKeys={['name', 'category', 'phone']}
           searchPlaceholder="Search suppliers…"
           emptyMessage="No suppliers onboarded yet."
+          serverPagination={serverPagination}
+          onPageChange={handlePageChange}
+          onSearch={handleSearch}
         />
       </Card>
 
@@ -95,10 +143,10 @@ export default function ConstructionSuppliers() {
         onSubmit={handleCreate}
         submitLabel="Save Supplier"
       >
-        <Field label="Supplier Name">
-          <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. BuildRite Hardware" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Supplier Name" className="sm:col-span-2">
+            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. BuildRite Hardware" />
+          </Field>
           <Field label="Category">
             <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -107,10 +155,10 @@ export default function ConstructionSuppliers() {
           <Field label="Phone">
             <TextInput value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0712 345 678" />
           </Field>
+          <Field label="Notes (optional)" className="sm:col-span-2">
+            <TextArea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Payment terms, contact person, etc." />
+          </Field>
         </div>
-        <Field label="Notes (optional)">
-          <TextArea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Payment terms, contact person, etc." />
-        </Field>
       </FormModal>
     </>
   )

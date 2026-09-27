@@ -133,7 +133,7 @@ export default function TenantDocuments() {
       )}
 
       <Card padded={false} className="p-5">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Lease Agreements</h3>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">Tenant Agreements</h3>
         <DataTable
           loading={loading}
           columns={columns}

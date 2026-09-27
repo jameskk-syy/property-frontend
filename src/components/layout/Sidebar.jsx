@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Building2, LogOut, ChevronDown } from 'lucide-react'
+import { LogOut, ChevronDown } from 'lucide-react'
 import { NAV_BY_ROLE } from '../../data/navigation'
 import { ROLE_LABELS } from '../../data/roles'
 import { useAuth } from '../../context/AuthContext'
 import Avatar from '../ui/Avatar'
+import DadisLogo from '../ui/DadisLogo'
 import LogoutConfirmDialog from '../patterns/LogoutConfirmDialog'
 
 function groupItems(items) {
@@ -31,7 +32,7 @@ function NavItem({ label, to, icon: Icon, end, onClose }) {
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
           isActive
-            ? 'bg-emerald-50 text-emerald-600'
+            ? 'bg-brand-50 text-brand-700'
             : 'text-black hover:bg-slate-100'
         }`
       }
@@ -94,10 +95,7 @@ export default function Sidebar({ open, onClose }) {
         }`}
       >
         <div className="flex items-center gap-2 px-5 h-16 border-b border-slate-200 shrink-0">
-          <span className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
-            <Building2 size={18} className="text-white" />
-          </span>
-          <span className="text-slate-900 font-semibold text-lg tracking-tight">Nest</span>
+          <DadisLogo size="default" showTagline={false} />
         </div>
 
         <div className="px-4 py-2.5 text-[11px] font-medium text-slate-500 uppercase tracking-wide shrink-0 flex items-center justify-between">

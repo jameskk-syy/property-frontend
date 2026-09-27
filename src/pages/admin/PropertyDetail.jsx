@@ -24,8 +24,13 @@ export default function PropertyDetail() {
     api.getProperty(id).then((res) => {
       if (mounted && res) {
         setProperty(res)
-        api.getUnits(res.id).then((uList) => {
-          if (mounted && Array.isArray(uList)) setPropUnits(uList)
+        // Fetch units for this property with pagination
+        api.getUnits(res.id, { page: 1, pageSize: 100 }).then((result) => {
+          if (mounted) {
+            // Handle paginated response: { data: [...], pagination: {...} }
+            const unitList = result?.data || result || []
+            if (Array.isArray(unitList)) setPropUnits(unitList)
+          }
         }).catch(() => {})
       }
     }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })

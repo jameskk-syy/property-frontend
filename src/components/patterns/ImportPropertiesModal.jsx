@@ -164,7 +164,7 @@ export default function ImportPropertiesModal({ open, onClose, onImport }) {
   }
 
   return (
-    <Modal open={open} onClose={close} title="Import Properties" description="Bulk-create multiple properties from a CSV file." size="lg">
+    <Modal open={open} onClose={close} title="Import Properties" description="Bulk-create multiple properties from a CSV file." size="2xl">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <input

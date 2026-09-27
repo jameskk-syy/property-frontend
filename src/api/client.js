@@ -1,16 +1,83 @@
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '/api'
 
+// Token storage keys
+const TOKEN_KEYS = {
+  TOKEN: 'nest.token',
+  API_KEY: 'nest.api_key',
+  API_SECRET: 'nest.api_secret'
+}
+
 class ApiClient {
   constructor() {
     this.baseUrl = API_BASE
+    this._onAuthError = null // Callback for auth errors (set by AuthContext)
   }
 
+  /**
+   * Set callback for authentication errors (logout user)
+   */
+  setAuthErrorHandler(handler) {
+    this._onAuthError = handler
+  }
+
+  /**
+   * Get stored token (api_key:api_secret)
+   */
+  getToken() {
+    return sessionStorage.getItem(TOKEN_KEYS.TOKEN)
+  }
+
+  /**
+   * Get stored API key
+   */
+  getApiKey() {
+    return sessionStorage.getItem(TOKEN_KEYS.API_KEY)
+  }
+
+  /**
+   * Store tokens
+   */
+  setTokens(token, apiKey, apiSecret) {
+    if (token) sessionStorage.setItem(TOKEN_KEYS.TOKEN, token)
+    if (apiKey) sessionStorage.setItem(TOKEN_KEYS.API_KEY, apiKey)
+    if (apiSecret) sessionStorage.setItem(TOKEN_KEYS.API_SECRET, apiSecret)
+  }
+
+  /**
+   * Clear all tokens
+   */
+  clearTokens() {
+    sessionStorage.removeItem(TOKEN_KEYS.TOKEN)
+    sessionStorage.removeItem(TOKEN_KEYS.API_KEY)
+    sessionStorage.removeItem(TOKEN_KEYS.API_SECRET)
+  }
+
+  /**
+   * Check if we have a token
+   */
+  hasToken() {
+    return !!this.getToken()
+  }
+
+  /**
+   * Make an authenticated request
+   */
   async request(endpoint, options = {}) {
     const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`
+    
+    // Build headers
     const headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       ...(options.headers || {}),
+    }
+
+    // Add Authorization header if we have a token (except for login endpoint)
+    const isLoginEndpoint = endpoint.includes('auth.login')
+    const token = this.getToken()
+    
+    if (token && !isLoginEndpoint) {
+      headers['Authorization'] = `token ${token}`
     }
 
     try {
@@ -19,10 +86,22 @@ class ApiClient {
         headers,
         credentials: 'include'
       })
+
+      // Handle 401/403 - authentication error
+      if ((res.status === 401 || res.status === 403) && !isLoginEndpoint) {
+        console.warn('[API] Authentication error, clearing tokens')
+        this.clearTokens()
+        if (this._onAuthError) {
+          this._onAuthError('Session expired. Please login again.')
+        }
+        throw new Error('Session expired. Please login again.')
+      }
+
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
         throw new Error(this._friendlyError(errBody, res.status))
       }
+      
       return await res.json()
     } catch (err) {
       console.warn(`[API] ${endpoint} failed:`, err.message)
@@ -85,24 +164,128 @@ class ApiClient {
   }
 
   // --- AUTH ---
+  /**
+   * Login with Frappe token authentication
+   * @param {object|string} usr - Username/email or object with usr/pwd
+   * @param {string} pwd - Password (if usr is string)
+   * @returns {object} - { token, api_key, api_secret, user, ... }
+   */
   async login(usr, pwd) {
-    let username = usr
+    let email = usr
     let password = pwd
     if (typeof usr === 'object' && usr !== null) {
-      username = usr.usr || usr.email || usr.username
+      email = usr.usr || usr.email || usr.username
       password = usr.pwd || usr.password
     }
-    return await this.request('/method/login', {
+
+    // Call token login endpoint
+    const res = await this.request('/method/property_management.api.auth.login', {
       method: 'POST',
-      body: JSON.stringify({ usr: String(username || ''), pwd: String(password || '') }),
+      body: JSON.stringify({ 
+        email: String(email || ''), 
+        password: String(password || '') 
+      }),
     })
+
+    const result = res.message || res
+
+    if (result.status === 'success' && result.token) {
+      // Store tokens
+      this.setTokens(result.token, result.api_key, result.api_secret)
+      return result
+    } else {
+      throw new Error(result.message || 'Login failed')
+    }
   }
 
+  /**
+   * Logout and clear tokens
+   */
   async logout() {
-    return await this.request('/method/logout', { method: 'POST' })
+    try {
+      const token = this.getToken()
+      if (token) {
+        await this.request('/method/property_management.api.auth.logout', { 
+          method: 'POST' 
+        }).catch(() => {})
+      }
+    } finally {
+      this.clearTokens()
+    }
+  }
+
+  // --- OTP AUTHENTICATION ---
+  /**
+   * Request OTP for a phone number
+   * @param {string} phone - Phone number with country code (e.g., +254712345678)
+   * @returns {object} - { status, phone_masked, dev_otp?, dev_mode? }
+   */
+  async requestOTP(phone) {
+    const res = await this.request('/method/property_management.api.auth.request_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone: String(phone || '') }),
+    })
+    return res.message || res
+  }
+
+  /**
+   * Verify OTP code
+   * @param {string} phone - Phone number used for OTP request
+   * @param {string} otp - 6-digit OTP code
+   * @returns {object} - { status, token?, user?, message? }
+   */
+  async verifyOTP(phone, otp) {
+    const res = await this.request('/method/property_management.api.auth.verify_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone: String(phone || ''), otp: String(otp || '') }),
+    })
+    const result = res.message || res
+    
+    // If OTP verified and token received, store it
+    if (result.status === 'success' && result.token) {
+      this.setTokens(result.token, result.api_key, result.api_secret)
+    }
+    return result
+  }
+
+  /**
+   * Resend OTP to phone number
+   * @param {string} phone - Phone number to resend OTP to
+   * @returns {object} - { status, dev_otp?, dev_mode? }
+   */
+  async resendOTP(phone) {
+    const res = await this.request('/method/property_management.api.auth.resend_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone: String(phone || '') }),
+    })
+    return res.message || res
+  }
+
+  /**
+   * Verify current token and get user info
+   */
+  async verifyToken() {
+    const token = this.getToken()
+    if (!token) return null
+
+    try {
+      const res = await this.request('/method/property_management.api.auth.verify', {
+        method: 'POST',
+        body: JSON.stringify({ token })
+      })
+      const result = res.message || res
+      return result.valid ? result.user : null
+    } catch {
+      return null
+    }
   }
 
   async getCurrentUser() {
+    // First try token verification
+    const tokenUser = await this.verifyToken()
+    if (tokenUser) return tokenUser.id || tokenUser.email
+
+    // Fallback to Frappe session
     const res = await this.request('/method/frappe.auth.get_logged_user')
     return res && res.message ? res.message : res
   }
@@ -285,12 +468,45 @@ class ApiClient {
   }
 
   // --- UNITS (API v2, server-side; avoids /resource 403) ---
-  async getUnits(propertyId) {
+  async getUnits(propertyId, { page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (propertyId) qs.append('property', propertyId)
-    const data = await this.pmApi(`directory.list_units?${qs.toString()}`)
-    return Array.isArray(data)
-      ? data.map((u) => ({
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    if (search) qs.append('search', search)
+    
+    const result = await this.pmApi(`directory.list_units?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((u) => ({
+        id: u.name,
+        number: u.unit_number || u.name,
+        type: u.unit_type || '1 Bedroom',
+        rent: u.base_rent || 0,
+        deposit: u.security_deposit || 0,
+        floor: u.floor || 'Ground',
+        status: u.status || 'Vacant',
+        tenant: u.status === 'Occupied' ? 'Active Tenant' : '—',
+        property: u.property,
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((u) => ({
           id: u.name,
           number: u.unit_number || u.name,
           type: u.unit_type || '1 Bedroom',
@@ -300,8 +516,12 @@ class ApiClient {
           status: u.status || 'Vacant',
           tenant: u.status === 'Occupied' ? 'Active Tenant' : '—',
           property: u.property,
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
   async createUnit(payload) {
@@ -334,10 +554,39 @@ class ApiClient {
   }
 
   // --- TENANTS ---
-  async getTenants() {
-    const data = await this.pmApi('directory.list_tenants')
-    return Array.isArray(data)
-      ? data.map((t) => ({
+  async getTenants({ page = 1, pageSize = 8, search = '' } = {}) {
+    const result = await this.pmApi('directory.list_tenants', { page, page_size: pageSize, search })
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((t) => ({
+        id: t.id,
+        name: t.name,
+        unit: t.unit || 'Unassigned',
+        phone: t.phone || '—',
+        email: t.email || '',
+        national_id: t.national_id || '',
+        rent: Number(t.rent) || 0,
+        balance: Number(t.balance) || 0,
+        status: t.status || 'Active',
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((t) => ({
           id: t.id,
           name: t.name,
           unit: t.unit || 'Unassigned',
@@ -347,8 +596,12 @@ class ApiClient {
           rent: Number(t.rent) || 0,
           balance: Number(t.balance) || 0,
           status: t.status || 'Active',
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
   async getTenant(id) {
@@ -419,6 +672,11 @@ class ApiClient {
       email_address: r.email_address || r.email || '',
       national_id: r.national_id || r.idNumber || '',
       income_range: r.income_range || r.incomeRange || null,
+      property: r.property || '',
+      unit: r.unit || '',
+      rent: r.rent || 0,
+      deposit: r.deposit || 0,
+      already_paid: r.already_paid || false,
     }))
     return await this.pmApi('directory.bulk_create_tenants', { tenants })
   }
@@ -466,11 +724,38 @@ class ApiClient {
   }
 
   // --- LANDLORDS & CARETAKERS ---
-  async getLandlords() {
-    // Server-side list with real assigned property + unit counts.
-    const data = await this.pmApi('directory.list_landlords')
-    return Array.isArray(data)
-      ? data.map((l) => ({
+  async getLandlords({ page = 1, pageSize = 8, search = '' } = {}) {
+    const result = await this.pmApi('directory.list_landlords', { page, page_size: pageSize, search })
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((l) => ({
+        id: l.id,
+        name: l.name,
+        phone: l.phone || '—',
+        email: l.email || '',
+        properties: l.properties || 0,
+        units: l.units || 0,
+        payoutMethod: l.payout_method || 'Bank',
+        status: l.status || 'Active',
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((l) => ({
           id: l.id,
           name: l.name,
           phone: l.phone || '—',
@@ -479,8 +764,12 @@ class ApiClient {
           units: l.units || 0,
           payoutMethod: l.payout_method || 'Bank',
           status: l.status || 'Active',
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
   async createLandlord(payload) {
@@ -521,11 +810,37 @@ class ApiClient {
     return res.data
   }
 
-  async getCaretakers() {
-    // Server-side list with real assigned property + unit counts.
-    const data = await this.pmApi('directory.list_caretakers')
-    return Array.isArray(data)
-      ? data.map((c) => ({
+  async getCaretakers({ page = 1, pageSize = 8, search = '' } = {}) {
+    const result = await this.pmApi('directory.list_caretakers', { page, page_size: pageSize, search })
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone || '—',
+        email: c.email || '',
+        properties: c.properties || 0,
+        units: c.units || 0,
+        status: c.status || 'Active',
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((c) => ({
           id: c.id,
           name: c.name,
           phone: c.phone || '—',
@@ -533,8 +848,12 @@ class ApiClient {
           properties: c.properties || 0,
           units: c.units || 0,
           status: c.status || 'Active',
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
   async createCaretaker(payload) {
@@ -736,6 +1055,61 @@ class ApiClient {
     return await this.pmApi('settings.set_messaging_settings', settings)
   }
 
+  // --- WHATSAPP MESSAGING ---
+
+  /**
+   * Send a WhatsApp message with optional Pay Now button.
+   * If invoice is provided, includes an interactive Pay button that triggers M-Pesa STK.
+   */
+  async sendWhatsAppMessage({ phone, message, invoice = null } = {}) {
+    const endpoint = invoice
+      ? 'property_management.api.messaging.send_whatsapp_with_pay_button'
+      : 'property_management.api.whatsapp.send_message'
+    const res = await this.request(`/method/${endpoint}`, {
+      method: 'POST',
+      body: JSON.stringify({ phone, message, invoice }),
+    })
+    return res && res.message ? res.message : res
+  }
+
+  /**
+   * Send rent reminder via WhatsApp with Pay Now button.
+   * Uses the backend's high-level function that composes the message.
+   */
+  async sendWhatsAppRentReminder({ tenant, invoice } = {}) {
+    const res = await this.request('/method/property_management.api.messaging.send_rent_reminder_message', {
+      method: 'POST',
+      body: JSON.stringify({ tenant, invoice }),
+    })
+    return res && res.message ? res.message : res
+  }
+
+  /**
+   * Send overdue reminder via WhatsApp with Pay Now button.
+   */
+  async sendWhatsAppOverdueReminder({ tenant, invoice } = {}) {
+    const res = await this.request('/method/property_management.api.messaging.send_overdue_reminder_message', {
+      method: 'POST',
+      body: JSON.stringify({ tenant, invoice }),
+    })
+    return res && res.message ? res.message : res
+  }
+
+  /**
+   * Get WhatsApp message history with optional filters.
+   * Returns messages logged in WhatsApp Message Log doctype.
+   */
+  async getWhatsAppMessages({ phone = null, direction = null, status = null, limit = 50 } = {}) {
+    const qs = new URLSearchParams()
+    if (phone) qs.append('phone', phone)
+    if (direction) qs.append('direction', direction)
+    if (status) qs.append('status', status)
+    if (limit) qs.append('limit', String(limit))
+    const res = await this.request(`/method/property_management.api.whatsapp.get_messages?${qs.toString()}`)
+    const data = res && res.message ? res.message : res
+    return Array.isArray(data) ? data : []
+  }
+
   /** Admin: delete all tenants that have no unit/lease. Returns {deleted, count}. */
   async deleteUnassignedTenants() {
     return await this.pmApi('directory.delete_unassigned_tenants', {})
@@ -765,14 +1139,34 @@ class ApiClient {
     })
   }
 
-  /** Admin/caretaker: list held tenant items (photos come back as base64). */
-  async getHeldItems({ tenant = null, property = null } = {}) {
+  /** Admin/caretaker: list held tenant items with pagination (photos come back as base64). */
+  async getHeldItems({ tenant = null, property = null, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (tenant) qs.append('tenant', tenant)
     if (property) qs.append('property', property)
-    const q = qs.toString()
-    const data = await this.pmApi(`directory.list_held_items${q ? `?${q}` : ''}`)
-    return Array.isArray(data) ? data : []
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    if (search) qs.append('search', search)
+    
+    const result = await this.pmApi(`directory.list_held_items?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   /** Caretaker: leases with tenant + initial payment status (own properties). */
@@ -927,15 +1321,33 @@ class ApiClient {
     return await this.v2(`reports.balance_sheet?${qs.toString()}`)
   }
 
-  async listJournalEntries({ company = null, property = null, from_date = null, to_date = null, limit = 50 } = {}) {
+  async listJournalEntries({ company = null, property = null, from_date = null, to_date = null, page = 1, pageSize = 8 } = {}) {
     const qs = new URLSearchParams()
     if (company) qs.append('company', company)
     if (property) qs.append('property', property)
     if (from_date) qs.append('from_date', from_date)
     if (to_date) qs.append('to_date', to_date)
-    if (limit) qs.append('limit', String(limit))
-    const data = await this.v2(`accounting.list_journal_entries?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    const result = await this.v2(`accounting.list_journal_entries?${qs.toString()}`)
+    
+    // Handle new paginated response
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   async createJournalEntry({ lines, company = null, property = null, postingDate = null, remark = null } = {}) {
@@ -954,13 +1366,18 @@ class ApiClient {
 
   /** Full list of GL accounts for JE / opening-balance pickers. */
   async listAccounts({ company = null, property = null, rootType = null } = {}) {
+    // Use the non-authenticated accounting API that returns all accounts
     const qs = new URLSearchParams()
-    if (company) qs.append('company', company)
-    if (property) qs.append('property', property)
     if (rootType) qs.append('root_type', rootType)
-    const data = await this.v2(`accounting.list_accounts?${qs.toString()}`)
+    const res = await this.request(`/method/property_management.api.accounting.list_accounts?${qs.toString()}`)
+    const data = res && res.message ? res.message : []
     return Array.isArray(data)
-      ? data.map((a) => ({ id: a.name, name: a.account_name || a.name, rootType: a.root_type, type: a.account_type }))
+      ? data.filter(a => !a.is_group).map((a) => ({ 
+          id: a.name, 
+          name: a.account_name || a.name, 
+          rootType: a.root_type, 
+          type: a.account_type 
+        }))
       : []
   }
 
@@ -1129,15 +1546,35 @@ class ApiClient {
   }
 
   // --- COMPLAINTS (admin/caretaker view) — API v2, envelope ---
-  async getComplaints({ property = null, tenant = null, status = null, category = null, search = null } = {}) {
+  async getComplaints({ property = null, tenant = null, status = null, category = null, search = null, page = 1, pageSize = 8 } = {}) {
     const qs = new URLSearchParams()
     if (property) qs.append('property', property)
     if (tenant) qs.append('tenant', tenant)
     if (status) qs.append('status', status)
     if (category) qs.append('category', category)
     if (search) qs.append('search', search)
-    const data = await this.v2(`complaints.list_complaints?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`complaints.list_complaints?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   async getComplaintStats({ property = null, tenant = null } = {}) {
@@ -1258,16 +1695,46 @@ class ApiClient {
 
   // --- EXPENSES (API v2, server-side; avoids /resource 403) ---
   // Pass mine=true to only get expenses raised by the current user (caretaker view).
-  async getExpenses({ property = null, organization = null, status = null, mine = false, limit = 100 } = {}) {
+  async getExpenses({ property = null, organization = null, status = null, mine = false, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (property) qs.append('property', property)
     if (organization) qs.append('organization', organization)
     if (status) qs.append('status', status)
     if (mine) qs.append('mine', '1')
-    if (limit) qs.append('limit', String(limit))
-    const data = await this.v2(`finance.list_expenses?${qs.toString()}`)
-    return Array.isArray(data)
-      ? data.map((e) => ({
+    if (search) qs.append('search', search)
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`finance.list_expenses?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((e) => ({
+        id: e.name,
+        vendor: e.vendor_name || 'Vendor',
+        category: e.expense_category || '',
+        amount: e.amount || 0,
+        description: e.work_description || '',
+        date: e.approved_at || e.creation || '',
+        status: e.status || 'Draft',
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((e) => ({
           id: e.name,
           vendor: e.vendor_name || 'Vendor',
           category: e.expense_category || '',
@@ -1275,19 +1742,56 @@ class ApiClient {
           description: e.work_description || '',
           date: e.approved_at || e.creation || '',
           status: e.status || 'Draft',
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
   // --- EMPLOYEES / SALARIES (API v2, server-side; correct custom field names) ---
-  async getEmployees({ organization = null, property = null, limit = 100 } = {}) {
+  async getEmployees({ organization = null, property = null, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (organization) qs.append('organization', organization)
     if (property) qs.append('property', property)
-    if (limit) qs.append('limit', String(limit))
-    const data = await this.v2(`payroll.list_employees?${qs.toString()}`)
-    return Array.isArray(data)
-      ? data.map((e) => ({
+    if (search) qs.append('search', search)
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`payroll.list_employees?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      const data = result.data.map((e) => ({
+        id: e.name,
+        name: e.employee_name || e.name,
+        role: e.designation || 'Staff',
+        property: e.property || '',
+        salary: e.gross_salary || 0,
+        phone: e.phone || '',
+        email: e.email || '',
+        nationalId: e.national_id || '',
+        bonusDeposit: e.bonus_deposit || 0,
+        status: e.status || 'Active',
+      }))
+      return {
+        data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    if (Array.isArray(result)) {
+      return {
+        data: result.map((e) => ({
           id: e.name,
           name: e.employee_name || e.name,
           role: e.designation || 'Staff',
@@ -1298,12 +1802,16 @@ class ApiClient {
           nationalId: e.national_id || '',
           bonusDeposit: e.bonus_deposit || 0,
           status: e.status || 'Active',
-        }))
-      : []
+        })),
+        pagination: null
+      }
+    }
+    
+    return { data: [], pagination: null }
   }
 
-  async getSalaries() {
-    return await this.getEmployees()
+  async getSalaries(params = {}) {
+    return await this.getEmployees(params)
   }
 
   /**
@@ -1398,11 +1906,25 @@ class ApiClient {
 
 
   // --- AUDIT LOGS ---
-  async getAuditLogs({ limit = 500 } = {}) {
+  async getAuditLogs({ page = 1, pageSize = 8, search = '' } = {}) {
     try {
-      const res = await this.request(`/resource/Audit Log?fields=["name","user","action","timestamp","doctype_name","document_name"]&order_by=creation desc&limit_page_length=${Number(limit) || 0}`)
+      const offset = (page - 1) * pageSize
+      
+      // Build filters for search
+      let filters = ''
+      if (search) {
+        filters = `&filters=[["user","like","%${search}%"]]`
+      }
+      
+      // Get total count first
+      const countRes = await this.request(`/resource/Audit Log?limit_page_length=0&fields=["name"]${filters}`)
+      const total = countRes?.data?.length || 0
+      
+      // Get paginated data
+      const res = await this.request(`/resource/Audit Log?fields=["name","user","action","timestamp","doctype_name","document_name"]&order_by=creation desc&limit_start=${offset}&limit_page_length=${pageSize}${filters}`)
+      
       if (res && res.data) {
-        return res.data.map(l => ({
+        const data = res.data.map(l => ({
           id: l.name,
           actor: l.user || 'System',
           action: l.action || '',
@@ -1410,9 +1932,23 @@ class ApiClient {
           document: l.document_name || '',
           time: l.timestamp || l.creation || ''
         }))
+        
+        const totalPages = Math.ceil(total / pageSize) || 1
+        
+        return {
+          data,
+          pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1
+          }
+        }
       }
     } catch {}
-    return []
+    return { data: [], pagination: null }
   }
 
   // --- CONSTRUCTION PROJECTS ---
@@ -1458,12 +1994,33 @@ class ApiClient {
   }
 
   // --- CONSTRUCTION PROJECTS (API v2, org-scoped) ---
-  /** Projects scoped to the caller's organization. Projects are tied to an org, not a property. */
-  async getConstructionProjectsV2({ organization = null } = {}) {
+  /** Projects scoped to the caller's organization with pagination. Projects are tied to an org, not a property. */
+  async getConstructionProjectsV2({ organization = null, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (organization) qs.append('organization', organization)
-    const data = await this.v2(`construction.list_projects?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    if (search) qs.append('search', search)
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`construction.list_projects?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   /** Create a construction project (a new build). Tied to the organization; property is optional. */
@@ -1508,13 +2065,34 @@ class ApiClient {
   }
 
   // --- CONSTRUCTION PURCHASES (materials) — API v2, envelope ---
-  /** Material purchase records for a project (or all). */
-  async getConstructionPurchases({ project = null, status = null } = {}) {
+  /** Material purchase records for a project (or all) with pagination. */
+  async getConstructionPurchases({ project = null, status = null, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (project) qs.append('project', project)
     if (status) qs.append('status', status)
-    const data = await this.v2(`construction.list_purchases?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    if (search) qs.append('search', search)
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`construction.list_purchases?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   /** Record a material purchase (starts in Pending Approval for Director review). */
@@ -1541,11 +2119,32 @@ class ApiClient {
   }
 
   // --- SUPPLIERS / VENDORS (Expense Vendor) — API v2, envelope ---
-  async getVendors({ organization = null } = {}) {
+  async getVendors({ organization = null, page = 1, pageSize = 8, search = '' } = {}) {
     const qs = new URLSearchParams()
     if (organization) qs.append('organization', organization)
-    const data = await this.v2(`construction.list_vendors?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    if (search) qs.append('search', search)
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`construction.list_vendors?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   async createVendor(payload) {
@@ -1593,15 +2192,34 @@ class ApiClient {
     return Array.isArray(data) ? data : []
   }
 
-  /** Unified invoice register (Sales + Purchase) for the admin Invoices page. */
-  async getAllInvoices({ kind = null, status = null, search = null, limit = 200 } = {}) {
+  /** Unified invoice register (Sales + Purchase) with pagination for the admin Invoices page. */
+  async getAllInvoices({ kind = null, status = null, search = null, page = 1, pageSize = 8 } = {}) {
     const qs = new URLSearchParams()
     if (kind) qs.append('kind', kind)
     if (status) qs.append('status', status)
     if (search) qs.append('search', search)
-    if (limit) qs.append('limit', String(limit))
-    const data = await this.v2(`finance.list_all_invoices?${qs.toString()}`)
-    return Array.isArray(data) ? data : []
+    qs.append('page', String(page))
+    qs.append('page_size', String(pageSize))
+    
+    const result = await this.v2(`finance.list_all_invoices?${qs.toString()}`)
+    
+    // Handle new paginated response format
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        }
+      }
+    }
+    
+    // Backward compatibility with old array response
+    return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
   // --- EXPENSE CATEGORIES (accounting heads) ---
@@ -1944,6 +2562,50 @@ class ApiClient {
   /** Get chart of accounts in tree structure */
   async getChartOfAccountsTree() {
     return await this.pmApi('accounting.get_chart_of_accounts_tree')
+  }
+
+  // --------------------------------------------------------------------------
+  // OTP Authentication
+  // --------------------------------------------------------------------------
+
+  /**
+   * Request OTP for phone-based login
+   * @param {string} phone - Phone number
+   * @returns {object} - { status, message, phone_masked, dev_otp?, dev_mode? }
+   */
+  async requestOTP(phone) {
+    const res = await this.request('/method/property_management.api.auth.request_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone })
+    })
+    return res.message || res
+  }
+
+  /**
+   * Verify OTP and login
+   * @param {string} phone - Phone number used to request OTP
+   * @param {string} otp - The 6-digit OTP code
+   * @returns {object} - { status, token, user } on success
+   */
+  async verifyOTP(phone, otp) {
+    const res = await this.request('/method/property_management.api.auth.verify_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, otp })
+    })
+    return res.message || res
+  }
+
+  /**
+   * Resend OTP to phone number
+   * @param {string} phone - Phone number
+   * @returns {object} - Same as requestOTP
+   */
+  async resendOTP(phone) {
+    const res = await this.request('/method/property_management.api.auth.resend_otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone })
+    })
+    return res.message || res
   }
 }
 

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Gauge, Plus, Droplets, Zap } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { Field, TextInput, Select } from '../../components/ui/Field'
+import AsyncSearchSelect from '../../components/ui/AsyncSearchSelect'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatKsh } from '../../data/mockData'
@@ -15,15 +16,15 @@ export default function CaretakerMeterReadings() {
   const { user } = useAuth()
   const [readings, setReadings] = useState([])
   const [properties, setProperties] = useState([])
-  const [units, setUnits] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ property: '', unit: '', utilityType: 'Water', currentReading: '', previousReading: '', ratePerUnit: 150 })
+  // Key to force AsyncSearchSelect to reset when property changes
+  const [unitSelectKey, setUnitSelectKey] = useState(0)
 
   const loadReadings = (property) => {
     setLoading(true)
-    // Only readings captured by this caretaker.
     api.getMeterReadings({ property: property || null, capturedBy: user?.email || user?.id || null }).then((res) => {
       setReadings(Array.isArray(res) ? res : [])
     }).catch(() => {}).finally(() => setLoading(false))
@@ -42,14 +43,36 @@ export default function CaretakerMeterReadings() {
     loadReadings()
   }, [])
 
-  // Load units when the selected property changes.
-  useEffect(() => {
-    if (!form.property) return
-    api.getUnits(form.property).then((res) => {
-      setUnits(Array.isArray(res) ? res : [])
-      if (res && res[0]) setForm((f) => ({ ...f, unit: f.unit || res[0].id }))
-    }).catch(() => {})
+  // Server-side search for units
+  const fetchUnits = useCallback(async ({ search, page, pageSize }) => {
+    if (!form.property) return { data: [] }
+    try {
+      const result = await api.getUnits(form.property, { search, page, pageSize: pageSize || 20 })
+      const unitList = result?.data || result || []
+      return {
+        data: unitList.map((u) => ({
+          ...u,
+          name: u.id,
+          label: u.number || u.id,
+        })),
+        pagination: result?.pagination
+      }
+    } catch (err) {
+      console.error('Error fetching units:', err)
+      return { data: [] }
+    }
   }, [form.property])
+
+  const handlePropertyChange = (propertyId) => {
+    setForm({ ...form, property: propertyId, unit: '' })
+    // Increment key to force AsyncSearchSelect to reset and refetch
+    setUnitSelectKey(k => k + 1)
+  }
+
+  const handleUnitChange = (unit) => {
+    const unitId = unit?.id || unit?.name || unit
+    setForm({ ...form, unit: unitId })
+  }
 
   const handleSubmit = async () => {
     if (!form.unit || form.currentReading === '') {
@@ -106,7 +129,6 @@ export default function CaretakerMeterReadings() {
         searchKeys={['unit', 'utilityType']}
         searchPlaceholder="Search readings…"
       />
-
       <FormModal
         open={open}
         onClose={() => setOpen(false)}
@@ -115,18 +137,24 @@ export default function CaretakerMeterReadings() {
         onSubmit={handleSubmit}
         submitLabel={saving ? 'Saving…' : 'Save Reading'}
       >
-        <Field label="Property">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value, unit: '' })}>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Unit">
-          <Select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
-            <option value="">Select unit…</option>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.number || u.id}</option>)}
-          </Select>
-        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Property">
+            <Select value={form.property} onChange={(e) => handlePropertyChange(e.target.value)}>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Unit (searchable)">
+            <AsyncSearchSelect
+              key={unitSelectKey}
+              value={form.unit}
+              onChange={handleUnitChange}
+              fetchOptions={fetchUnits}
+              disabled={!form.property}
+              placeholder={form.property ? 'Search units…' : 'Select a property first'}
+              labelKey="label"
+              valueKey="id"
+            />
+          </Field>
           <Field label="Utility">
             <Select value={form.utilityType} onChange={(e) => setForm({ ...form, utilityType: e.target.value })}>
               <option>Water</option>
@@ -136,8 +164,6 @@ export default function CaretakerMeterReadings() {
           <Field label="Rate per unit (KSh)">
             <TextInput type="number" value={form.ratePerUnit} onChange={(e) => setForm({ ...form, ratePerUnit: e.target.value })} />
           </Field>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Previous reading (optional)">
             <TextInput type="number" value={form.previousReading} onChange={(e) => setForm({ ...form, previousReading: e.target.value })} placeholder="Auto from last reading" />
           </Field>

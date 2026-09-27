@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Send } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
@@ -7,7 +7,7 @@ import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Avatar from '../../components/ui/Avatar'
 import { useToast } from '../../context/ToastContext'
-import { tenants as defaultTenants, formatKsh } from '../../data/mockData'
+import { formatKsh } from '../../data/mockData'
 import { Users, Wallet, AlertTriangle, Receipt } from 'lucide-react'
 import { api } from '../../api/client'
 
@@ -16,23 +16,58 @@ const CHANNEL_LABELS = { sms: 'SMS', email: 'Email', whatsapp: 'WhatsApp' }
 export default function TenantBillingManagement() {
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const [tenantList, setTenantList] = useState(defaultTenants)
+  const [tenantList, setTenantList] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [loading, setLoading] = useState(true)
   const [invoiceFor, setInvoiceFor] = useState(null)
   const [sending, setSending] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
 
-  useEffect(() => {
-    let mounted = true
-    api.getTenants().then((res) => {
-      if (mounted && res && res.length > 0) setTenantList(res)
-    }).catch(() => {}).finally(() => {
-      if (mounted) setLoading(false)
-    })
-    return () => { mounted = false }
+  // Fetch tenants with pagination
+  const fetchTenants = useCallback(async (page = 1, size = 8, search = '') => {
+    setLoading(true)
+    try {
+      const res = await api.getTenants({ page, pageSize: size, search })
+      if (res && res.data) {
+        setTenantList(res.data)
+        setPagination(res.pagination)
+      }
+    } catch (err) {
+      console.error('Failed to fetch tenants:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchTenants(1, pageSize, '')
+  }, [fetchTenants, pageSize])
+
+  // Handle page change (now receives page and pageSize)
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchTenants(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchTenants(newPage, pageSize, searchQuery)
+    }
+  }, [fetchTenants, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchTenants(1, pageSize, query)
+  }, [fetchTenants, pageSize])
 
   const overdue = tenantList.filter((t) => t.status === 'Overdue')
   const totalBalance = tenantList.reduce((s, t) => s + (t.balance || 0), 0)
+  const totalRent = tenantList.reduce((s, t) => s + (t.rent || 0), 0)
 
   const draftInvoiceMessage = (t) =>
     t
@@ -68,6 +103,15 @@ export default function TenantBillingManagement() {
     }
   }
 
+  // Build server pagination props for DataTable
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
+
   return (
     <>
       <ListPageTemplate
@@ -77,8 +121,8 @@ export default function TenantBillingManagement() {
         onRowClick={(row) => navigate(`/admin/tenants/${row.id}`)}
         loading={loading}
         stats={[
-          { label: 'Total Tenants', value: tenantList.length, icon: Users },
-          { label: 'Monthly Rent Roll', value: formatKsh(tenantList.reduce((s, t) => s + (t.rent || 0), 0)), icon: Receipt, tone: 'blue' },
+          { label: 'Total Tenants', value: pagination?.total || tenantList.length, icon: Users },
+          { label: 'Monthly Rent Roll', value: formatKsh(totalRent), icon: Receipt, tone: 'blue' },
           { label: 'Outstanding Balance', value: formatKsh(totalBalance), icon: Wallet, tone: 'orange' },
           { label: 'Overdue Tenants', value: overdue.length, icon: AlertTriangle, tone: 'red' },
         ]}
@@ -119,8 +163,11 @@ export default function TenantBillingManagement() {
           ) },
         ]}
         rows={tenantList}
-        searchKeys={['name', 'unit', 'phone']}
         searchPlaceholder="Search tenants by name, unit, phone…"
+        // Server-side pagination props
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <ReminderDialog

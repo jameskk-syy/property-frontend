@@ -20,33 +20,59 @@ export default function CaretakerExpenses() {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ vendor: '', vendorPhone: '', category: '', amount: '', property: '', description: '' })
+  
+  // Stats from server or computed
+  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, totalAmount: 0 })
+
+  const loadExpenses = async () => {
+    setLoading(true)
+    try {
+      // Only show expenses this caretaker raised - handle paginated response
+      const result = await api.getExpenses({ mine: true, pageSize: 100 })
+      const expenseList = result?.data || result || []
+      setExpenses(Array.isArray(expenseList) ? expenseList : [])
+      
+      // Calculate stats from the data
+      const totalAmount = expenseList.reduce((s, e) => s + (e.amount || 0), 0)
+      const pending = expenseList.filter(e => e.status !== 'Approved').length
+      const approved = expenseList.filter(e => e.status === 'Approved').length
+      setStats({
+        total: expenseList.length,
+        pending,
+        approved,
+        totalAmount
+      })
+    } catch (err) {
+      console.error('Error loading expenses:', err)
+      setExpenses([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
-    // Only show expenses this caretaker raised.
-    api.getExpenses({ mine: true }).then((res) => {
-      if (mounted) setExpenses(Array.isArray(res) ? res : [])
-    }).catch(() => {}).finally(() => {
-      if (mounted) setLoading(false)
-    })
-
-    api.getProperties().then((res) => {
-      if (mounted && res && res.length > 0) setProperties(res)
+    
+    loadExpenses()
+    
+    // Use getMyProperties for caretaker's assigned properties
+    api.getMyProperties().then((res) => {
+      if (mounted && res && res.length > 0) {
+        setProperties(res)
+        // Auto-select first property
+        setForm((f) => ({ ...f, property: f.property || res[0].id }))
+      }
     }).catch(() => {})
-
+    
     api.getExpenseCategories().then((res) => {
       if (mounted && res && res.length > 0) {
         setCategories(res)
         setForm((f) => (f.category ? f : { ...f, category: res[0].id }))
       }
     }).catch(() => {})
-
+    
     return () => { mounted = false }
   }, [])
-
-  const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
-  const pending = expenses.filter(e => e.status !== 'Approved')
-  const approved = expenses.filter(e => e.status === 'Approved')
 
   const handleSubmit = async () => {
     if (!form.vendor || !form.amount) {
@@ -64,10 +90,9 @@ export default function CaretakerExpenses() {
         description: form.description
       })
       showToast(`Expense of ${formatKsh(form.amount)} raised for approval.`)
-      const updated = await api.getExpenses({ mine: true })
-      setExpenses(Array.isArray(updated) ? updated : [])
+      await loadExpenses()
       setOpen(false)
-      setForm({ vendor: '', vendorPhone: '', category: categories[0]?.id || '', amount: '', property: '', description: '' })
+      setForm({ vendor: '', vendorPhone: '', category: categories[0]?.id || '', amount: '', property: properties[0]?.id || '', description: '' })
     } catch (err) {
       showToast(err?.message || 'Could not raise expense.')
     } finally {
@@ -82,10 +107,10 @@ export default function CaretakerExpenses() {
         description="Raise property operating expenses for approval and track their status."
         actions={<Button icon={Plus} onClick={() => setOpen(true)}>Raise Expense</Button>}
         stats={[
-          { label: 'Total Raised', value: formatKsh(totalExpenses), icon: Wallet, tone: 'red' },
-          { label: 'Records', value: expenses.length, icon: Receipt },
-          { label: 'Pending Approval', value: pending.length, icon: Clock, tone: 'orange' },
-          { label: 'Approved', value: approved.length, icon: CheckCircle, tone: 'green' },
+          { label: 'Total Raised', value: formatKsh(stats.totalAmount), icon: Wallet, tone: 'red' },
+          { label: 'Records', value: stats.total, icon: Receipt },
+          { label: 'Pending Approval', value: stats.pending, icon: Clock, tone: 'orange' },
+          { label: 'Approved', value: stats.approved, icon: CheckCircle, tone: 'green' },
         ]}
         columns={[
           { key: 'vendor', header: 'Vendor' },
@@ -107,32 +132,34 @@ export default function CaretakerExpenses() {
         onSubmit={handleSubmit}
         submitLabel={saving ? 'Submitting…' : 'Raise for Approval'}
       >
-        <Field label="Vendor Name">
-          <TextInput value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="e.g. Kijani Plumbing" />
-        </Field>
-        <Field label="Vendor M-Pesa Phone">
-          <TextInput value={form.vendorPhone} onChange={(e) => setForm({ ...form, vendorPhone: e.target.value })} placeholder="2547XXXXXXXX" />
-        </Field>
-        <Field label="Category">
-          <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-            {categories.length === 0 && <option value="">No categories configured</option>}
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Amount (KSh)">
-          <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="15000" />
-        </Field>
-        <Field label="Property">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
-            <option value="">Select property…</option>
-            {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Work Description">
-          <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Describe the work or purpose…" />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Vendor Name">
+            <TextInput value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="e.g. Kijani Plumbing" />
+          </Field>
+          <Field label="Vendor M-Pesa Phone">
+            <TextInput value={form.vendorPhone} onChange={(e) => setForm({ ...form, vendorPhone: e.target.value })} placeholder="2547XXXXXXXX" />
+          </Field>
+          <Field label="Category">
+            <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {categories.length === 0 && <option value="">No categories configured</option>}
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Amount (KSh)">
+            <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="15000" />
+          </Field>
+          <Field label="Property" className="sm:col-span-2">
+            <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+              <option value="">Select property…</option>
+              {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Work Description" className="sm:col-span-2">
+            <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Describe the work or purpose…" />
+          </Field>
+        </div>
       </FormModal>
     </>
   )

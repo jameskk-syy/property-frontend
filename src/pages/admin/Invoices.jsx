@@ -17,17 +17,57 @@ const KIND = { All: null, Sales: 'sales', Purchase: 'purchase' }
 export default function Invoices() {
   const [tab, setTab] = useState('All')
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [opening, setOpening] = useState(null)
 
-  const load = useCallback((kind) => {
+  // Fetch invoices with pagination
+  const fetchInvoices = useCallback(async (page = 1, size = 8, search = '', kind = null) => {
     setLoading(true)
-    api.getAllInvoices({ kind })
-      .then((res) => setRows(res || []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
+    try {
+      const res = await api.getAllInvoices({ kind, page, pageSize: size, search })
+      if (res && res.data) {
+        setRows(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setRows(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoices:', err)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  useEffect(() => { load(KIND[tab]) }, [tab, load])
+  // Initial load and tab change
+  useEffect(() => {
+    fetchInvoices(1, pageSize, searchQuery, KIND[tab])
+    setCurrentPage(1)
+  }, [tab, fetchInvoices, pageSize])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchInvoices(1, newPageSize, searchQuery, KIND[tab])
+    } else {
+      setCurrentPage(newPage)
+      fetchInvoices(newPage, pageSize, searchQuery, KIND[tab])
+    }
+  }, [fetchInvoices, searchQuery, pageSize, tab])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchInvoices(1, pageSize, query, KIND[tab])
+  }, [fetchInvoices, pageSize, tab])
 
   const sales = rows.filter((r) => r.type === 'Sales')
   const purchase = rows.filter((r) => r.type === 'Purchase')
@@ -42,10 +82,7 @@ export default function Invoices() {
     return 'slate'
   }
 
-  const [opening, setOpening] = useState(null)
-
-  // Open the invoice PDF in a new tab (fetched with the session cookie so it
-  // works for private docs, and never shows the Frappe desk UI).
+  // Open the invoice PDF in a new tab
   const openPrint = async (r) => {
     if (!r.printUrl) return
     setOpening(r.id)
@@ -57,12 +94,20 @@ export default function Invoices() {
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch {
-      // Fallback: direct navigation (still same-origin, sends the cookie).
       window.open(r.printUrl, '_blank', 'noopener')
     } finally {
       setOpening(null)
     }
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <div>
@@ -75,7 +120,7 @@ export default function Invoices() {
         <div className="mb-6"><StatCardsSkeleton count={4} /></div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatCard label="Total Invoices" value={rows.length} icon={FileText} />
+          <StatCard label="Total Invoices" value={pagination?.total || rows.length} icon={FileText} />
           <StatCard label="Sales Invoices" value={sales.length} icon={TrendingUp} tone="brand" />
           <StatCard label="Purchase Invoices" value={purchase.length} icon={TrendingDown} tone="orange" />
           <StatCard label="Sales Value" value={formatKsh(salesTotal)} icon={TrendingUp} tone="blue" />
@@ -105,9 +150,11 @@ export default function Invoices() {
             ) },
           ]}
           rows={rows.map((r) => ({ ...r, id: r.id }))}
-          searchKeys={['id', 'party', 'status', 'type']}
           searchPlaceholder="Search invoices…"
           emptyMessage="No invoices found."
+          serverPagination={serverPagination}
+          onPageChange={handlePageChange}
+          onSearch={handleSearch}
         />
       </Card>
     </div>

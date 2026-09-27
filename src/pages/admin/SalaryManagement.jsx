@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Banknote, Users, Plus, PlayCircle, Upload } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
@@ -24,6 +24,7 @@ const emptyForm = { name: '', role: 'Caretaker', property: '', salary: '', phone
 export default function SalaryManagement() {
   const { showToast } = useToast()
   const [employees, setEmployees] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -31,19 +32,57 @@ export default function SalaryManagement() {
   const [running, setRunning] = useState(false)
   const [statutory, setStatutory] = useState(null)
   const [form, setForm] = useState(emptyForm)
-  const [payrollScope, setPayrollScope] = useState('') // '' = whole organization
+  const [payrollScope, setPayrollScope] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
 
-  useEffect(() => {
-    let mounted = true
-    api.getEmployees().then((res) => {
-      if (mounted && Array.isArray(res)) setEmployees(res)
-    }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })
-    api.getProperties().then((res) => {
-      if (mounted && res && res.length > 0) setProperties(res)
-    }).catch(() => {})
-    return () => { mounted = false }
+  // Fetch employees with pagination
+  const fetchEmployees = useCallback(async (page = 1, size = 8, search = '') => {
+    setLoading(true)
+    try {
+      const res = await api.getEmployees({ page, pageSize: size, search })
+      if (res && res.data) {
+        setEmployees(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setEmployees(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch employees:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchEmployees(1, pageSize, '')
+    api.getProperties().then((res) => {
+      if (res && res.length > 0) setProperties(res)
+    }).catch(() => {})
+  }, [fetchEmployees, pageSize])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchEmployees(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchEmployees(newPage, pageSize, searchQuery)
+    }
+  }, [fetchEmployees, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchEmployees(1, pageSize, query)
+  }, [fetchEmployees, pageSize])
 
   // Live statutory preview (PAYE / NSSF / SHIF / Housing Levy) as gross changes
   useEffect(() => {
@@ -59,11 +98,6 @@ export default function SalaryManagement() {
   }, [form.salary, open])
 
   const totalPayroll = employees.reduce((s, p) => s + (p.salary || 0), 0)
-
-  const refresh = async () => {
-    const updated = await api.getEmployees()
-    if (updated && updated.length > 0) setEmployees(updated)
-  }
 
   const handleSubmit = async () => {
     if (!form.name || !form.salary) {
@@ -85,7 +119,7 @@ export default function SalaryManagement() {
           ? `${form.name} added to HR. Payroll enrollment pending backend setup.`
           : `${form.name} added to HR and enrolled on payroll.`
       )
-      await refresh()
+      fetchEmployees(currentPage, pageSize, searchQuery)
       setOpen(false)
       setForm(emptyForm)
     } catch (err) {
@@ -105,32 +139,38 @@ export default function SalaryManagement() {
           ? `Imported ${created} staff. ${failed} row${failed === 1 ? '' : 's'} failed — check names and salaries.`
           : `Imported ${created} staff and enrolled them on payroll.`
       )
-      await refresh()
+      fetchEmployees(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Could not import staff.')
-      throw err // keep the modal open on failure
+      throw err
     }
   }
 
   const handleRunPayroll = async () => {
     setRunning(true)
     try {
-      const period = new Date().toISOString().slice(0, 7) // YYYY-MM
-      // Scope by property if chosen; otherwise the backend resolves the
-      // organization (single/first org, or the user's assigned org).
+      const period = new Date().toISOString().slice(0, 7)
       const res = await api.runPayroll({ period, property: payrollScope || undefined })
-      // Backend returns { slips: <count>, salary_slips: [...], total_net }
       const count = res && typeof res.slips === 'number'
         ? res.slips
         : (res && res.salary_slips && res.salary_slips.length) || 0
       showToast(count ? `Payroll run complete: ${count} salary slips generated.` : 'Payroll run submitted (no eligible employees).')
-      await refresh()
+      fetchEmployees(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Payroll run failed. Check company/payroll setup.')
     } finally {
       setRunning(false)
     }
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -154,7 +194,7 @@ export default function SalaryManagement() {
           </div>
         }
         stats={[
-          { label: 'Employees', value: employees.length, icon: Users },
+          { label: 'Employees', value: pagination?.total || employees.length, icon: Users },
           { label: 'Monthly Payroll', value: formatKsh(totalPayroll), icon: Banknote, tone: 'blue' },
         ]}
         columns={[
@@ -165,8 +205,10 @@ export default function SalaryManagement() {
           { key: 'status', header: 'Status', render: (r) => <Badge>{r.status || 'Active'}</Badge> },
         ]}
         rows={employees}
-        searchKeys={['name', 'role', 'property']}
         searchPlaceholder="Search employees…"
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
       <ImportStaffModal
         open={importOpen}
@@ -181,21 +223,24 @@ export default function SalaryManagement() {
         onSubmit={handleSubmit}
         submitLabel={saving ? 'Saving…' : 'Add to HR & Payroll'}
       >
-        <Field label="Full Name">
-          <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Grace Wanjiru" />
-        </Field>
-        <Field label="Designation">
-          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            {DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-          </Select>
-        </Field>
-        <Field label="Property (optional)">
-          <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
-            <option value="">— Not assigned —</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Full Name">
+            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Grace Wanjiru" />
+          </Field>
+          <Field label="Designation">
+            <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              {DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </Select>
+          </Field>
+          <Field label="Property (optional)">
+            <Select value={form.property} onChange={(e) => setForm({ ...form, property: e.target.value })}>
+              <option value="">— Not assigned —</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Gross Salary (KSh)">
+            <TextInput type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} placeholder="25000" />
+          </Field>
           <Field label="M-Pesa Phone">
             <TextInput value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="2547XXXXXXXX" />
           </Field>
@@ -203,12 +248,9 @@ export default function SalaryManagement() {
             <TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@nest.co.ke" />
           </Field>
         </div>
-        <Field label="Gross Salary (KSh)">
-          <TextInput type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} placeholder="25000" />
-        </Field>
 
         {statutory && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5 mt-4">
             <p className="font-semibold text-slate-700">Statutory deductions preview</p>
             <div className="flex justify-between"><span>PAYE</span><span>{formatKsh(statutory.paye)}</span></div>
             <div className="flex justify-between"><span>NSSF</span><span>{formatKsh(statutory.nssf)}</span></div>

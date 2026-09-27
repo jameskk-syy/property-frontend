@@ -50,7 +50,7 @@ export default function ReminderDialog({
       onClose={onClose}
       title={title}
       description={tenant.tenant ? `To ${tenant.tenant}${tenant.unit ? ` · Unit ${tenant.unit}` : ''}` : 'Compose and send the message.'}
-      size="lg"
+      size="xl"
     >
       <div className="space-y-4">
         <div>

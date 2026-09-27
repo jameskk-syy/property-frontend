@@ -35,29 +35,31 @@ function StkDialog({ open, onClose, tenant, onSend, sending }) {
     <Modal
       open={open}
       onClose={onClose}
-      size="sm"
+      size="lg"
       title="Send M-Pesa STK Push"
       description={`Send payment request to ${tenant.tenant_name} for rent + deposit.`}
     >
       <div className="space-y-4">
-        <Field label="Phone Number" hint="The M-Pesa number to receive the STK push">
-          <TextInput
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="e.g. 0712345678 or 254712345678"
-            autoFocus
-          />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Phone Number" hint="The M-Pesa number to receive the STK push">
+            <TextInput
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. 0712345678 or 254712345678"
+              autoFocus
+            />
+          </Field>
 
-        <Field label="Amount (KES)" hint="Rent + Deposit amount">
-          <TextInput
-            type="text"
-            value={formatKsh(tenant.initial_amount_due || 0)}
-            disabled
-            className="bg-slate-100 text-slate-600"
-          />
-        </Field>
+          <Field label="Amount (KES)" hint="Rent + Deposit amount">
+            <TextInput
+              type="text"
+              value={formatKsh(tenant.initial_amount_due || 0)}
+              disabled
+              className="bg-slate-100 text-slate-600"
+            />
+          </Field>
+        </div>
 
         <Field label="Unit">
           <TextInput
@@ -322,7 +324,7 @@ export default function CaretakerTenants() {
       <Modal
         open={!!vacateFor}
         onClose={closeVacate}
-        size="lg"
+        size="xl"
         title={vacateFor ? `Vacate ${vacateFor.tenant_name}` : 'Vacate Unit'}
         description={vacateFor ? `Terminate the lease on unit ${vacateFor.unit || '—'}. The unit becomes vacant and re-appears in listings.` : ''}
       >

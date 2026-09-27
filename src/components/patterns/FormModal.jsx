@@ -19,7 +19,7 @@ export default function FormModal({
   onSubmit,
   submitLabel = 'Save',
   submittingLabel = 'Submitting…',
-  size,
+  size = 'xl',
   children,
 }) {
   const [submitting, setSubmitting] = useState(false)

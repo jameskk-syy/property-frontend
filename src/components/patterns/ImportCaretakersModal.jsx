@@ -149,7 +149,7 @@ export default function ImportCaretakersModal({ open, onClose, onImport }) {
   }
 
   return (
-    <Modal open={open} onClose={close} title="Import Caretakers" description="Bulk-create multiple caretakers from a CSV file." size="lg">
+    <Modal open={open} onClose={close} title="Import Caretakers" description="Bulk-create multiple caretakers from a CSV file." size="2xl">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <input type="file" ref={fileInputRef} onChange={handleFile} accept=".csv,.txt" className="hidden" />

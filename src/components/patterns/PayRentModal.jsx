@@ -87,17 +87,19 @@ export default function PayRentModal({ open, onClose, invoice = null, amount = n
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="Pay Rent" description={unitLabel ? `${propLabel} · Unit ${unitLabel}` : propLabel}>
+    <Modal open={open} onClose={handleClose} title="Pay Rent" description={unitLabel ? `${propLabel} · Unit ${unitLabel}` : propLabel} size="lg">
       {stage === 'form' && (
         <form onSubmit={handlePay} className="space-y-4">
-          <div className="rounded-lg bg-slate-50 border border-slate-100 p-4 flex items-center justify-between">
-            <span className="text-sm text-slate-500">Amount due</span>
-            <span className="text-lg font-semibold text-slate-900">{formatKsh(dueAmount)}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-lg bg-slate-50 border border-slate-100 p-4 flex items-center justify-between">
+              <span className="text-sm text-slate-500">Amount due</span>
+              <span className="text-lg font-semibold text-slate-900">{formatKsh(dueAmount)}</span>
+            </div>
+            <Field label="M-Pesa phone number">
+              <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+254 7XX XXX XXX" />
+            </Field>
           </div>
-          <Field label="M-Pesa phone number (pay from any number)">
-            <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+254 7XX XXX XXX" />
-          </Field>
-          <p className="text-[11px] text-slate-400 -mt-2">The STK prompt is sent to this number. You can enter a different M-Pesa number to pay from.</p>
+          <p className="text-[11px] text-slate-400">The STK prompt is sent to this number. You can enter a different M-Pesa number to pay from.</p>
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <Button type="submit" className="w-full" icon={Smartphone}>Send STK Push</Button>
         </form>

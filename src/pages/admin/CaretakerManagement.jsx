@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ShieldCheck, Plus, Eye, Upload, Phone, Mail, Hash, Building2 } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
@@ -11,38 +11,74 @@ import Avatar from '../../components/ui/Avatar'
 import { Field, TextInput } from '../../components/ui/Field'
 import MultiSelect from '../../components/ui/MultiSelect'
 import { useToast } from '../../context/ToastContext'
-import { caretakers as initialCaretakers } from '../../data/mockData'
 import { api } from '../../api/client'
 
 export default function CaretakerManagement() {
   const [searchParams] = useSearchParams()
   const { showToast } = useToast()
-  const [caretakers, setCaretakers] = useState(initialCaretakers)
+  const [caretakers, setCaretakers] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(searchParams.get('new') === 'true')
   const [importOpen, setImportOpen] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
   const [form, setForm] = useState({ caretakerId: '', name: '', phone: '', email: '', properties: [] })
 
-  useEffect(() => {
-    let mounted = true
-    api.getCaretakers().then((res) => {
-      if (mounted && res && res.length > 0) setCaretakers(res)
-    }).catch(() => {}).finally(() => {
-      if (mounted) setLoading(false)
-    })
-    api.getProperties().then((res) => {
-      if (mounted && res) setProperties(res)
-    }).catch(() => {})
-    return () => { mounted = false }
+  // Fetch caretakers with pagination
+  const fetchCaretakers = useCallback(async (page = 1, size = 8, search = '') => {
+    setLoading(true)
+    try {
+      const res = await api.getCaretakers({ page, pageSize: size, search })
+      if (res && res.data) {
+        setCaretakers(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setCaretakers(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch caretakers:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchCaretakers(1, pageSize, '')
+    api.getProperties().then((res) => {
+      if (res) setProperties(res)
+    }).catch(() => {})
+  }, [fetchCaretakers, pageSize])
 
   useEffect(() => {
     if (searchParams.get('new') === 'true') {
       setOpen(true)
     }
   }, [searchParams])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchCaretakers(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchCaretakers(newPage, pageSize, searchQuery)
+    }
+  }, [fetchCaretakers, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchCaretakers(1, pageSize, query)
+  }, [fetchCaretakers, pageSize])
 
   const resetForm = () => setForm({ caretakerId: '', name: '', phone: '', email: '', properties: [] })
 
@@ -52,11 +88,7 @@ export default function CaretakerManagement() {
       return
     }
     const selectedIds = form.properties
-    const selectedNames = properties
-      .filter((p) => selectedIds.includes(p.id))
-      .map((p) => p.name)
 
-    // Save to the backend first; only reflect success in the UI if it worked.
     try {
       const created = await api.createCaretaker({
         caretaker_name: form.name,
@@ -73,40 +105,17 @@ export default function CaretakerManagement() {
         )
       )
 
-      setCaretakers((prev) => [{
-        id: caretakerId || form.caretakerId,
-        name: form.name,
-        phone: form.phone,
-        email: form.email,
-        properties: selectedNames.join(', ') || '—',
-        propertyNames: selectedNames,
-        status: 'Active'
-      }, ...prev])
       showToast(`${form.name} added as a caretaker.`)
       resetForm()
       setOpen(false)
+      // Refresh list
+      fetchCaretakers(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err?.message || 'Could not save the caretaker. Please try again.', 'error')
     }
   }
 
   const handleBulkImport = async (caretakerRows) => {
-    const localRows = caretakerRows.map((r, idx) => {
-      const names = r.assigned_properties
-        ? r.assigned_properties.split(/[;,]/).map((s) => s.trim()).filter(Boolean)
-        : []
-      return {
-        id: r.caretaker_id || `C-${String(caretakers.length + idx + 1).padStart(2, '0')}`,
-        name: r.caretaker_name,
-        phone: r.phone_number,
-        email: r.email_address,
-        properties: names.join(', ') || '—',
-        propertyNames: names,
-        status: 'Active',
-      }
-    })
-    setCaretakers((prev) => [...localRows, ...prev])
-
     const result = await api.bulkCreateCaretakers(caretakerRows)
     const okCount = result.created.length
     const failCount = result.failed.length
@@ -115,9 +124,20 @@ export default function CaretakerManagement() {
     } else if (okCount > 0 && failCount > 0) {
       showToast(`Imported ${okCount}, but ${failCount} failed. Check details and retry.`)
     } else {
-      showToast('Could not save caretakers to the server, but they are shown locally.')
+      showToast('Could not save caretakers to the server.')
     }
+    // Refresh list
+    fetchCaretakers(1, pageSize, searchQuery)
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -132,7 +152,7 @@ export default function CaretakerManagement() {
           </div>
         }
         stats={[
-          { label: 'Total Caretakers', value: caretakers.length, icon: ShieldCheck },
+          { label: 'Total Caretakers', value: pagination?.total || caretakers.length, icon: ShieldCheck },
           { label: 'Active', value: caretakers.filter((c) => c.status === 'Active').length, icon: ShieldCheck, tone: 'brand' },
           { label: 'On Leave', value: caretakers.filter((c) => c.status === 'On Leave').length, icon: ShieldCheck, tone: 'orange' },
         ]}
@@ -152,8 +172,10 @@ export default function CaretakerManagement() {
           ) },
         ]}
         rows={caretakers}
-        searchKeys={['name', 'phone', 'email', 'properties']}
         searchPlaceholder="Search caretakers…"
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <FormModal
@@ -164,33 +186,33 @@ export default function CaretakerManagement() {
         onSubmit={handleSubmit}
         submitLabel="Add Caretaker"
       >
-        <Field label="Caretaker ID">
-          <TextInput
-            value={form.caretakerId}
-            onChange={(e) => setForm({ ...form, caretakerId: e.target.value })}
-            placeholder="e.g. C-01 (leave blank to auto-generate)"
-          />
-        </Field>
-        <Field label="Full name">
-          <TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. John Kiptoo" />
-        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Caretaker ID">
+            <TextInput
+              value={form.caretakerId}
+              onChange={(e) => setForm({ ...form, caretakerId: e.target.value })}
+              placeholder="e.g. C-01 (leave blank to auto-generate)"
+            />
+          </Field>
+          <Field label="Full name">
+            <TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. John Kiptoo" />
+          </Field>
           <Field label="Phone number">
             <TextInput required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+254 7XX XXX XXX" />
           </Field>
           <Field label="Email address">
             <TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="caretaker@email.com" />
           </Field>
+          <Field label="Assigned properties (optional)" className="sm:col-span-2">
+            <MultiSelect
+              options={properties.map((p) => ({ value: p.id, label: p.name }))}
+              value={form.properties}
+              onChange={(vals) => setForm({ ...form, properties: vals })}
+              placeholder="Optional — you can link properties later…"
+            />
+          </Field>
         </div>
-        <Field label="Assigned properties (optional)">
-          <MultiSelect
-            options={properties.map((p) => ({ value: p.id, label: p.name }))}
-            value={form.properties}
-            onChange={(vals) => setForm({ ...form, properties: vals })}
-            placeholder="Optional — you can link properties later…"
-          />
-        </Field>
-        <p className="text-xs text-slate-400 -mt-1">
+        <p className="text-xs text-slate-400 mt-2">
           Property assignment is optional. You can link this caretaker to properties later from the property record.
         </p>
       </FormModal>

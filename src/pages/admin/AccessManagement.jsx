@@ -330,7 +330,7 @@ export default function AccessManagement() {
         description="Name the role, then choose which modules it can access."
         onSubmit={submitRole}
         submitLabel={roleModal.editing ? 'Save Changes' : 'Create Role'}
-        size="lg"
+        size="xl"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Role name">
@@ -342,15 +342,15 @@ export default function AccessManagement() {
               disabled={roleModal.editing?.locked}
             />
           </Field>
+          <Field label="Description">
+            <TextArea
+              value={roleForm.description}
+              onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
+              placeholder="What is this role responsible for?"
+            />
+          </Field>
         </div>
-        <Field label="Description">
-          <TextArea
-            value={roleForm.description}
-            onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
-            placeholder="What is this role responsible for?"
-          />
-        </Field>
-        <div>
+        <div className="mt-4">
           <p className="text-sm font-medium text-slate-700 mb-2">Module access</p>
           <PermissionMatrix permissions={roleForm.permissions} onChange={setPermission} />
         </div>
@@ -364,18 +364,15 @@ export default function AccessManagement() {
         description="Set user credentials, assign a role, and select allowed modules."
         onSubmit={submitUser}
         submitLabel={userModal.editing ? 'Save Changes' : 'Create User'}
-        size="lg"
+        size="xl"
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Full name">
             <TextInput required value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} placeholder="e.g. Peter Njenga" />
           </Field>
           <Field label="Email address">
             <TextInput type="email" required value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} placeholder="name@nest.co.ke" />
           </Field>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
           <Field label={userModal.editing ? "New Password (optional)" : "Password"}>
             <TextInput
               type="password"
@@ -398,7 +395,7 @@ export default function AccessManagement() {
           </Field>
         </div>
 
-        <div>
+        <div className="mt-4">
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
             Module Access (Inherited from Role)
           </label>

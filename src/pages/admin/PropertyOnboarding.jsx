@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Home, Plus, Trash2, Upload, Download, Sparkles,
   Building, CheckCircle, FileSpreadsheet, Layers,
@@ -11,9 +11,10 @@ import { Field, TextInput, Select, TextArea } from '../../components/ui/Field'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import ImageGallery from '../../components/ui/ImageGallery'
+import AsyncSearchSelect from '../../components/ui/AsyncSearchSelect'
 import ImportPropertiesModal from '../../components/patterns/ImportPropertiesModal'
 import { useToast } from '../../context/ToastContext'
-import { landlords as defaultLandlords, caretakers as defaultCaretakers, formatKsh } from '../../data/mockData'
+import { formatKsh } from '../../data/mockData'
 import { api } from '../../api/client'
 
 const PROPERTY_TYPES = ['Apartment', 'Villa / Maisonette', 'Bedsitter Block', 'Commercial Complex', 'Mixed Use']
@@ -58,8 +59,6 @@ export default function PropertyOnboarding() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
 
-  const [landlordList, setLandlordList] = useState(defaultLandlords)
-  const [caretakerList, setCaretakerList] = useState(defaultCaretakers)
   const [importOpen, setImportOpen] = useState(false)
   const [form, setForm] = useState({
     propertyId: '',
@@ -98,40 +97,31 @@ export default function PropertyOnboarding() {
   const [showGenerator, setShowGenerator] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    let mounted = true
-    api.getLandlords().then((res) => {
-      if (mounted && res && res.length > 0) {
-        setLandlordList(res)
-        setForm((prev) => ({ ...prev, landlord: prev.landlord || res[0].name }))
-      }
-    }).catch(() => {})
-
-    api.getCaretakers().then((res) => {
-      if (mounted && res && res.length > 0) {
-        setCaretakerList(res)
-      }
-    }).catch(() => {})
-
-    return () => { mounted = false }
+  // Fetch functions for AsyncSearchSelect
+  const fetchLandlords = useCallback(async ({ search, page, pageSize }) => {
+    return await api.getLandlords({ search, page, pageSize })
   }, [])
 
-  const handleLandlordChange = (val) => {
-    if (val === '__add_new__') {
-      showToast('Redirecting to Onboard Landlord…')
-      navigate('/admin/landlords?new=true')
-      return
-    }
-    setForm({ ...form, landlord: val })
+  const fetchCaretakers = useCallback(async ({ search, page, pageSize }) => {
+    return await api.getCaretakers({ search, page, pageSize })
+  }, [])
+
+  const handleLandlordChange = (option) => {
+    setForm({ ...form, landlord: option?.name || '' })
   }
 
-  const handleCaretakerChange = (val) => {
-    if (val === '__add_new__') {
-      showToast('Redirecting to Onboard Caretaker…')
-      navigate('/admin/caretakers?new=true')
-      return
-    }
-    setForm({ ...form, caretaker: val })
+  const handleCaretakerChange = (option) => {
+    setForm({ ...form, caretaker: option?.name || '' })
+  }
+
+  const handleAddNewLandlord = () => {
+    showToast('Redirecting to Onboard Landlord…')
+    navigate('/admin/landlords?new=true')
+  }
+
+  const handleAddNewCaretaker = () => {
+    showToast('Redirecting to Onboard Caretaker…')
+    navigate('/admin/caretakers?new=true')
   }
 
   // --- UNIT LIST ACTIONS ---
@@ -416,32 +406,28 @@ export default function PropertyOnboarding() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Assigned Landlord">
-                <Select
+                <AsyncSearchSelect
                   value={form.landlord}
-                  onChange={(e) => handleLandlordChange(e.target.value)}
-                >
-                  <option value="">Select Landlord</option>
-                  {landlordList.map((l) => (
-                    <option key={l.id || l.name} value={l.name}>{l.name}</option>
-                  ))}
-                  <option value="__add_new__" className="text-brand-600 font-medium">
-                    + Add / Onboard New Landlord…
-                  </option>
-                </Select>
+                  onChange={handleLandlordChange}
+                  fetchOptions={fetchLandlords}
+                  placeholder="Search landlord by name..."
+                  labelKey="name"
+                  valueKey="name"
+                  addNewLabel="Add / Onboard New Landlord"
+                  onAddNew={handleAddNewLandlord}
+                />
               </Field>
               <Field label="On-Site Caretaker">
-                <Select
+                <AsyncSearchSelect
                   value={form.caretaker}
-                  onChange={(e) => handleCaretakerChange(e.target.value)}
-                >
-                  <option value="">None / Unassigned (Optional)</option>
-                  {caretakerList.map((c) => (
-                    <option key={c.id || c.name} value={c.name}>{c.name}</option>
-                  ))}
-                  <option value="__add_new__" className="text-brand-600 font-medium">
-                    + Add / Onboard New Caretaker…
-                  </option>
-                </Select>
+                  onChange={handleCaretakerChange}
+                  fetchOptions={fetchCaretakers}
+                  placeholder="Search caretaker by name..."
+                  labelKey="name"
+                  valueKey="name"
+                  addNewLabel="Add / Onboard New Caretaker"
+                  onAddNew={handleAddNewCaretaker}
+                />
               </Field>
             </div>
 

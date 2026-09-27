@@ -31,6 +31,7 @@ const prioTone = (p) => {
 export default function AdminComplaints() {
   const { showToast } = useToast()
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [stats, setStats] = useState(null)
   const [properties, setProperties] = useState([])
   const [tenants, setTenants] = useState([])
@@ -38,26 +39,48 @@ export default function AdminComplaints() {
   const [propertyFilter, setPropertyFilter] = useState('')
   const [tenantFilter, setTenantFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [active, setActive] = useState(null) // complaint being responded to
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [active, setActive] = useState(null)
   const [respForm, setRespForm] = useState({ response: '', status: '' })
 
-  const load = useCallback(() => {
+  // Fetch complaints with pagination
+  const fetchComplaints = useCallback(async (page = 1, size = 8, search = '') => {
     setLoading(true)
     const filters = {
       property: propertyFilter || null,
       tenant: tenantFilter || null,
       status: statusFilter || null,
+      search: search || null,
+      page,
+      pageSize: size,
     }
-    Promise.all([
-      api.getComplaints(filters),
-      api.getComplaintStats({ property: propertyFilter || null, tenant: tenantFilter || null }),
-    ]).then(([list, st]) => {
-      setRows(list || [])
+    try {
+      const [result, st] = await Promise.all([
+        api.getComplaints(filters),
+        api.getComplaintStats({ property: propertyFilter || null, tenant: tenantFilter || null }),
+      ])
+      if (result && result.data) {
+        setRows(result.data)
+        setPagination(result.pagination)
+      } else if (Array.isArray(result)) {
+        setRows(result)
+        setPagination(null)
+      }
       setStats(st || null)
-    }).catch(() => {}).finally(() => setLoading(false))
+    } catch (err) {
+      console.error('Failed to fetch complaints:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [propertyFilter, tenantFilter, statusFilter])
 
-  useEffect(() => { load() }, [load])
+  // Initial load and when filters change
+  useEffect(() => {
+    fetchComplaints(1, pageSize, searchQuery)
+    setCurrentPage(1)
+  }, [fetchComplaints, pageSize, propertyFilter, tenantFilter, statusFilter])
 
   // Load filter option lists once.
   useEffect(() => {
@@ -66,6 +89,25 @@ export default function AdminComplaints() {
   useEffect(() => {
     api.getComplaintTenants({ property: propertyFilter || null }).then((res) => setTenants(res || [])).catch(() => {})
   }, [propertyFilter])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchComplaints(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchComplaints(newPage, pageSize, searchQuery)
+    }
+  }, [fetchComplaints, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchComplaints(1, pageSize, query)
+  }, [fetchComplaints, pageSize])
 
   const openRespond = (row) => {
     setActive(row)
@@ -77,11 +119,20 @@ export default function AdminComplaints() {
       await api.respondComplaint(active.id, { response: respForm.response || null, status: respForm.status || null })
       showToast('Complaint updated.')
       setActive(null)
-      load()
+      fetchComplaints(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Could not update the complaint.', 'error')
     }
   }
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <div>
@@ -160,9 +211,11 @@ export default function AdminComplaints() {
             ) },
           ]}
           rows={rows}
-          searchKeys={['tenantName', 'propertyName', 'subject', 'category']}
           searchPlaceholder="Search complaints…"
           emptyMessage="No complaints match these filters."
+          serverPagination={serverPagination}
+          onPageChange={handlePageChange}
+          onSearch={handleSearch}
         />
       </Card>
 
@@ -175,18 +228,20 @@ export default function AdminComplaints() {
         submitLabel="Save"
       >
         {active && (
-          <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-sm text-slate-600">
+          <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-sm text-slate-600 mb-4">
             {active.description}
           </div>
         )}
-        <Field label="Status">
-          <Select value={respForm.status} onChange={(e) => setRespForm({ ...respForm, status: e.target.value })}>
-            {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-        </Field>
-        <Field label="Response to tenant">
-          <TextArea value={respForm.response} onChange={(e) => setRespForm({ ...respForm, response: e.target.value })} placeholder="Let the tenant know what will be done…" />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Status">
+            <Select value={respForm.status} onChange={(e) => setRespForm({ ...respForm, status: e.target.value })}>
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </Field>
+          <Field label="Response to tenant" className="sm:col-span-2">
+            <TextArea value={respForm.response} onChange={(e) => setRespForm({ ...respForm, response: e.target.value })} placeholder="Let the tenant know what will be done…" />
+          </Field>
+        </div>
       </FormModal>
     </div>
   )

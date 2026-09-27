@@ -81,16 +81,18 @@ export default function CaretakerMaintenance() {
         onSubmit={handleSubmit}
         submitLabel="Log Task"
       >
-        <Field label="What needs fixing?">
-          <TextInput required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Fix broken window — Greenview A3" />
-        </Field>
-        <Field label="Priority">
-          <Select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-            <option>Low</option>
-            <option>Medium</option>
-            <option>High</option>
-          </Select>
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="What needs fixing?" className="sm:col-span-2">
+            <TextInput required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Fix broken window — Greenview A3" />
+          </Field>
+          <Field label="Priority">
+            <Select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </Select>
+          </Field>
+        </div>
       </FormModal>
     </div>
   )

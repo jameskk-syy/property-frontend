@@ -103,10 +103,10 @@ export default function TenantComplaints() {
         onSubmit={handleSubmit}
         submitLabel="Submit Complaint"
       >
-        <Field label="Subject">
-          <TextInput value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Leaking kitchen tap" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Subject" className="sm:col-span-2">
+            <TextInput value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Leaking kitchen tap" />
+          </Field>
           <Field label="Category">
             <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -117,10 +117,10 @@ export default function TenantComplaints() {
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </Select>
           </Field>
+          <Field label="Description" className="sm:col-span-2">
+            <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What's wrong, since when, and where in the unit?" />
+          </Field>
         </div>
-        <Field label="Description">
-          <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What's wrong, since when, and where in the unit?" />
-        </Field>
       </FormModal>
 
       {viewing && (

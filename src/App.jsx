@@ -6,6 +6,8 @@ import DashboardLayout from './components/layout/DashboardLayout'
 
 import Login from './pages/auth/Login'
 import ResetPassword from './pages/auth/ResetPassword'
+import OTPLogin from './pages/auth/OTPLogin'
+import OTPVerify from './pages/auth/OTPVerify'
 
 // Admin
 import AdminDashboard from './pages/admin/Dashboard'
@@ -73,6 +75,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to={`/${user.role}`} replace /> : <Login />} />
+      <Route path="/otp-login" element={user ? <Navigate to={`/${user.role}`} replace /> : <OTPLogin />} />
+      <Route path="/otp-verify" element={user ? <Navigate to={`/${user.role}`} replace /> : <OTPVerify />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Admin workspace */}

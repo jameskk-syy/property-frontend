@@ -18,28 +18,69 @@ const EMPTY = { project: '', vendor: '', category: '', description: '', amount: 
 export default function ConstructionPurchases() {
   const { showToast } = useToast()
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
   const [projects, setProjects] = useState([])
   const [vendors, setVendors] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(null) // id being approved/rejected
+  const [busy, setBusy] = useState(null)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
 
-  const load = useCallback(() => {
+  // Fetch purchases with pagination
+  const fetchPurchases = useCallback(async (page = 1, size = 8, search = '') => {
     setLoading(true)
-    return api.getConstructionPurchases()
-      .then((res) => setRows(res || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    try {
+      const res = await api.getConstructionPurchases({ page, pageSize: size, search })
+      if (res && res.data) {
+        setRows(res.data)
+        setPagination(res.pagination)
+      } else if (Array.isArray(res)) {
+        setRows(res)
+        setPagination(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch purchases:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
+  // Initial load
   useEffect(() => {
-    load()
-    api.getConstructionProjectsV2().then((res) => setProjects(res || [])).catch(() => {})
-    api.getVendors().then((res) => setVendors(res || [])).catch(() => {})
+    fetchPurchases(1, pageSize, '')
+    api.getConstructionProjectsV2().then((res) => {
+      if (res && res.data) setProjects(res.data)
+      else if (Array.isArray(res)) setProjects(res)
+    }).catch(() => {})
+    api.getVendors().then((res) => {
+      if (res && res.data) setVendors(res.data)
+      else if (Array.isArray(res)) setVendors(res)
+    }).catch(() => {})
     api.getConstructionCategories().then((res) => setCategories(res || [])).catch(() => {})
-  }, [load])
+  }, [fetchPurchases, pageSize])
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchPurchases(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      fetchPurchases(newPage, pageSize, searchQuery)
+    }
+  }, [fetchPurchases, searchQuery, pageSize])
+
+  // Handle search
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchPurchases(1, pageSize, query)
+  }, [fetchPurchases, pageSize])
 
   const pending = rows.filter((r) => r.status === 'Pending Approval')
   const approved = rows.filter((r) => r.status === 'Approved')
@@ -55,7 +96,7 @@ export default function ConstructionPurchases() {
       showToast('Purchase recorded and sent for Director approval.')
       setOpen(false)
       setForm(EMPTY)
-      load()
+      fetchPurchases(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Could not record the purchase.', 'error')
     }
@@ -68,7 +109,7 @@ export default function ConstructionPurchases() {
       showToast(res?.purchaseInvoice
         ? `Approved. Purchase Invoice ${res.purchaseInvoice} posted.`
         : 'Purchase approved.')
-      load()
+      fetchPurchases(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Approval failed.', 'error')
     } finally {
@@ -81,7 +122,7 @@ export default function ConstructionPurchases() {
     try {
       await api.rejectConstructionPurchase(row.id)
       showToast('Purchase rejected.')
-      load()
+      fetchPurchases(currentPage, pageSize, searchQuery)
     } catch (err) {
       showToast(err.message || 'Rejection failed.', 'error')
     } finally {
@@ -90,6 +131,15 @@ export default function ConstructionPurchases() {
   }
 
   const statusTone = (s) => (s === 'Approved' ? 'green' : s === 'Rejected' ? 'red' : s === 'Pending Approval' ? 'orange' : 'slate')
+
+  // Build server pagination props
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   return (
     <>
@@ -103,7 +153,7 @@ export default function ConstructionPurchases() {
         <div className="mb-6"><StatCardsSkeleton count={3} /></div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <StatCard label="Total Purchases" value={rows.length} icon={Package} />
+          <StatCard label="Total Purchases" value={pagination?.total || rows.length} icon={Package} />
           <StatCard label="Pending Approval" value={pending.length} icon={Clock} tone="orange" />
           <StatCard label="Approved Spend" value={formatKsh(totalApproved)} icon={CheckCircle2} tone="brand" />
         </div>
@@ -142,9 +192,11 @@ export default function ConstructionPurchases() {
             ) },
           ]}
           rows={rows}
-          searchKeys={['projectName', 'description', 'vendorName', 'category']}
           searchPlaceholder="Search purchases…"
           emptyMessage="No material purchases recorded yet."
+          serverPagination={serverPagination}
+          onPageChange={handlePageChange}
+          onSearch={handleSearch}
         />
       </Card>
 
@@ -156,22 +208,22 @@ export default function ConstructionPurchases() {
         onSubmit={handleCreate}
         submitLabel="Submit for Approval"
       >
-        <Field label="Construction Project">
-          <Select value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })}>
-            <option value="">— Select project —</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Supplier (optional)">
-          <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
-            <option value="">— Select supplier —</option>
-            {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Item Description">
-          <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. 50 bags of cement + steel bars" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Construction Project">
+            <Select value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })}>
+              <option value="">— Select project —</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Supplier (optional)">
+            <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
+              <option value="">— Select supplier —</option>
+              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Item Description" className="sm:col-span-2">
+            <TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. 50 bags of cement + steel bars" />
+          </Field>
           <Field label="Category">
             <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               <option value="">— Select category —</option>
@@ -182,7 +234,7 @@ export default function ConstructionPurchases() {
             <TextInput type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="150000" />
           </Field>
         </div>
-        <p className="text-xs text-slate-400 -mt-1">
+        <p className="text-xs text-slate-400 mt-2">
           Paying workers? Choose <span className="font-medium text-slate-500">Labour / Wages</span> and set the supplier to the worker or labour crew.
         </p>
       </FormModal>

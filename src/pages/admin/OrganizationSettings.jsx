@@ -110,7 +110,8 @@ export default function OrganizationSettings() {
   const [msg, setMsg] = useState({
     sms_enabled: 0, sms_provider: "Africa's Talking", sms_sender_id: '', sms_api_key: '', sms_api_secret: '', sms_base_url: '',
     email_enabled: 0, email_from_name: '', email_from_address: '', smtp_host: '', smtp_port: 587, smtp_use_tls: 1, smtp_username: '', smtp_password: '',
-    whatsapp_enabled: 0, whatsapp_provider: 'Meta Cloud API', whatsapp_phone_number_id: '', whatsapp_access_token: '', whatsapp_base_url: '',
+    whatsapp_enabled: 0, whatsapp_provider: 'WAClient', whatsapp_phone_number_id: '', whatsapp_access_token: '', whatsapp_base_url: '',
+    whatsapp_waba_id: '', whatsapp_instance_id: '', whatsapp_webhook_verify_token: '',
   })
   const [msgSet, setMsgSet] = useState({ sms_api_secret_set: false, smtp_password_set: false, whatsapp_access_token_set: false })
   const [savingMsg, setSavingMsg] = useState(false)
@@ -133,9 +134,12 @@ export default function OrganizationSettings() {
           smtp_use_tls: res.smtp_use_tls ?? 1,
           smtp_username: res.smtp_username || '',
           whatsapp_enabled: res.whatsapp_enabled ?? 0,
-          whatsapp_provider: res.whatsapp_provider || 'Meta Cloud API',
+          whatsapp_provider: res.whatsapp_provider || 'WAClient',
           whatsapp_phone_number_id: res.whatsapp_phone_number_id || '',
           whatsapp_base_url: res.whatsapp_base_url || '',
+          whatsapp_waba_id: res.whatsapp_waba_id || '',
+          whatsapp_instance_id: res.whatsapp_instance_id || '',
+          whatsapp_webhook_verify_token: res.whatsapp_webhook_verify_token || '',
           sms_api_secret: '', smtp_password: '', whatsapp_access_token: '',
         }))
         setMsgSet({
@@ -170,6 +174,9 @@ export default function OrganizationSettings() {
         whatsapp_provider: msg.whatsapp_provider,
         whatsapp_phone_number_id: msg.whatsapp_phone_number_id,
         whatsapp_base_url: msg.whatsapp_base_url,
+        whatsapp_waba_id: msg.whatsapp_waba_id,
+        whatsapp_instance_id: msg.whatsapp_instance_id,
+        whatsapp_webhook_verify_token: msg.whatsapp_webhook_verify_token,
       }
       // Only send secrets when the admin typed a new value (blank = keep existing).
       if (msg.sms_api_secret) payload.sms_api_secret = msg.sms_api_secret
@@ -624,17 +631,30 @@ export default function OrganizationSettings() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Provider">
                   <Select value={msg.whatsapp_provider} onChange={(e) => setMsgField('whatsapp_provider', e.target.value)}>
+                    <option>WAClient</option>
                     <option>Meta Cloud API</option>
                     <option>Twilio</option>
-                    <option>Generic HTTP</option>
                   </Select>
                 </Field>
-                <Field label="Phone Number ID / From">
-                  <TextInput value={msg.whatsapp_phone_number_id} onChange={(e) => setMsgField('whatsapp_phone_number_id', e.target.value)} placeholder="Phone number ID" />
+                <Field label="Phone Number ID">
+                  <TextInput value={msg.whatsapp_phone_number_id} onChange={(e) => setMsgField('whatsapp_phone_number_id', e.target.value)} placeholder="From Meta Developer Portal" />
+                </Field>
+                <Field label="WABA ID">
+                  <TextInput value={msg.whatsapp_waba_id || ''} onChange={(e) => setMsgField('whatsapp_waba_id', e.target.value)} placeholder="WhatsApp Business Account ID" />
                 </Field>
                 <Field label={`Access Token${msgSet.whatsapp_access_token_set ? ' (set — leave blank to keep)' : ''}`}>
-                  <TextInput type="password" value={msg.whatsapp_access_token} onChange={(e) => setMsgField('whatsapp_access_token', e.target.value)} placeholder={msgSet.whatsapp_access_token_set ? '••••••••' : 'Access token'} />
+                  <TextInput type="password" value={msg.whatsapp_access_token} onChange={(e) => setMsgField('whatsapp_access_token', e.target.value)} placeholder={msgSet.whatsapp_access_token_set ? '••••••••' : 'Permanent token from Meta'} />
                 </Field>
+                {msg.whatsapp_provider === 'WAClient' && (
+                  <>
+                    <Field label="WAClient Instance ID">
+                      <TextInput value={msg.whatsapp_instance_id || ''} onChange={(e) => setMsgField('whatsapp_instance_id', e.target.value)} placeholder="e.g. META6A8073R86630" />
+                    </Field>
+                    <Field label="Webhook Verify Token">
+                      <TextInput value={msg.whatsapp_webhook_verify_token || ''} onChange={(e) => setMsgField('whatsapp_webhook_verify_token', e.target.value)} placeholder="Token you set in Meta" />
+                    </Field>
+                  </>
+                )}
                 <Field label="API Base URL">
                   <TextInput value={msg.whatsapp_base_url} onChange={(e) => setMsgField('whatsapp_base_url', e.target.value)} placeholder="https://graph.facebook.com/v19.0" />
                 </Field>

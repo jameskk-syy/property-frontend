@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Scale, BookOpen, PlusCircle, Landmark, FileText, RefreshCw, Trash2, Plus, ChevronRight, ChevronDown, CreditCard, Building2 } from 'lucide-react'
+import { Scale, BookOpen, PlusCircle, Landmark, FileText, RefreshCw, Trash2, Plus, ChevronRight, ChevronDown, ChevronLeft, CreditCard, Building2 } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import Tabs from '../../components/ui/Tabs'
@@ -141,7 +141,7 @@ function CreateJournalEntryModal({ onClose, onSuccess, accounts }) {
                           <option value="">Select account...</option>
                           {leafAccounts.map(a => (
                             <option key={a.id} value={a.id}>
-                              {a.name} ({a.rootType})
+                              {a.name}{a.rootType ? ` (${a.rootType})` : ''}
                             </option>
                           ))}
                         </Select>
@@ -409,6 +409,8 @@ export default function Accounting() {
   const [balanceSheet, setBalanceSheet] = useState(null)
   const [trialBalance, setTrialBalance] = useState([])
   const [journals, setJournals] = useState([])
+  const [journalPagination, setJournalPagination] = useState(null)
+  const [journalPage, setJournalPage] = useState(1)
   const [accounts, setAccounts] = useState([])
   const [unrec, setUnrec] = useState([])
 
@@ -436,7 +438,10 @@ export default function Accounting() {
     const jobs = {
       'Balance Sheet': () => api.getBalanceSheet({ property: prop }).then(setBalanceSheet),
       'Trial Balance': () => api.getTrialBalance(prop).then((r) => setTrialBalance(Array.isArray(r) ? r : [])),
-      'Journal Entries': () => api.listJournalEntries({ property: prop }).then(setJournals),
+      'Journal Entries': () => api.listJournalEntries({ property: prop, page: journalPage, pageSize: 8 }).then((res) => {
+        setJournals(res.data || [])
+        setJournalPagination(res.pagination)
+      }),
       'Chart of Accounts': () => api.getChartOfAccountsTree().then(setChartOfAccounts),
       'Bank Accounts': () => api.listBankAccountsWithBalance().then(setBankAccounts),
       'Opening Balance': () => Promise.resolve(),
@@ -445,7 +450,7 @@ export default function Accounting() {
     ;(jobs[tab] || (() => Promise.resolve()))()
       .catch((e) => showToast(e?.message || 'Could not load.'))
       .finally(() => setLoading(false))
-  }, [tab, propertyFilter, showToast])
+  }, [tab, propertyFilter, journalPage, showToast])
 
   useEffect(() => { load() }, [load])
 
@@ -586,6 +591,39 @@ export default function Accounting() {
               </div>
             ))}
             </div>
+
+            {/* Pagination Controls */}
+            {journalPagination && journalPagination.totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-200">
+                <p className="text-xs text-slate-500">
+                  Showing <span className="font-medium text-slate-700">{((journalPagination.page - 1) * journalPagination.pageSize) + 1}</span>–
+                  <span className="font-medium text-slate-700">{Math.min(journalPagination.page * journalPagination.pageSize, journalPagination.total)}</span> of{' '}
+                  <span className="font-medium text-slate-700">{journalPagination.total}</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={ChevronLeft}
+                    onClick={() => setJournalPage(p => Math.max(1, p - 1))}
+                    disabled={!journalPagination.hasPrev}
+                  >
+                    Prev
+                  </Button>
+                  <span className="text-sm text-slate-600 px-2">
+                    Page {journalPagination.page} of {journalPagination.totalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setJournalPage(p => p + 1)}
+                    disabled={!journalPagination.hasNext}
+                  >
+                    Next <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -602,7 +640,7 @@ export default function Accounting() {
                   <div className="flex-1">
                     <Select value={row.account} onChange={(e) => setObRow(i, 'account', e.target.value)}>
                       <option value="">Select account…</option>
-                      {accounts.filter(a => !a.is_group).map((a) => <option key={a.name} value={a.name}>{a.account_name} ({a.root_type})</option>)}
+                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.rootType ? ` (${a.rootType})` : ''}</option>)}
                     </Select>
                   </div>
                   <div className="w-28">
@@ -752,6 +790,8 @@ export default function Accounting() {
           onSuccess={(result) => {
             setShowCreateModal(false)
             load()
+            // Refresh accounts list for Journal Entry and Opening Balance
+            api.listAccounts().then(setAccounts).catch(() => {})
             // Refresh parent accounts list
             api.getParentAccounts().then(setParentAccounts).catch(() => {})
           }}
