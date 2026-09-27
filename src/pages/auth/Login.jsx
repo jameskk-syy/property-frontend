@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowRight, User, Phone, ChevronDown, Eye, EyeOff } from 'lucide-react'
-import DadisLogo from '../../components/ui/DadisLogo'
+import NestarLogo from '../../components/ui/NestarLogo'
 import { api } from '../../api/client'
 
 // Common country codes for Kenya region
@@ -105,7 +105,7 @@ export default function Login() {
         <div className="absolute -left-16 bottom-0 w-72 h-72 rounded-full bg-brand-500/10" />
         
         <div className="relative">
-          <DadisLogo size="large" variant="light" />
+          <NestarLogo size="large" variant="light" />
         </div>
         
         <div className="relative">
@@ -135,7 +135,7 @@ export default function Login() {
           </div>
         </div>
         
-        <p className="text-xs text-slate-500 relative">© 2026 DADIS Estates. All rights reserved.</p>
+        <p className="text-xs text-slate-500 relative">© 2026 NEST@R. All rights reserved.</p>
       </div>
 
       {/* Right panel - Login form */}
@@ -143,7 +143,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <DadisLogo size="large" />
+            <NestarLogo size="large" />
           </div>
 
           <div className="text-center mb-6">

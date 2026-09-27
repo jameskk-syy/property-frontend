@@ -104,7 +104,7 @@ export default function FinancialReports() {
   const [paymentsData, setPaymentsData] = useState([])
   const [agingBuckets, setAgingBuckets] = useState(null)
   const [ageFilter, setAgeFilter] = useState('all')
-  const [branding, setBranding] = useState({ company_name: 'Dadis Estates Limited', logo: null, property_name: null })
+  const [branding, setBranding] = useState({ company_name: 'NEST@R', logo: null, property_name: null })
 
   useEffect(() => {
     let mounted = true

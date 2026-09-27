@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { ArrowRight, ArrowLeft, RefreshCw, ShieldCheck, Clock } from 'lucide-react'
-import DadisLogo from '../../components/ui/DadisLogo'
+import NestarLogo from '../../components/ui/NestarLogo'
 import { useAuth } from '../../context/AuthContext'
 import { api } from '../../api/client'
 
@@ -186,7 +186,7 @@ export default function OTPVerify() {
         <div className="absolute -left-16 bottom-0 w-72 h-72 rounded-full bg-brand-500/10" />
         
         <div className="relative">
-          <DadisLogo size="large" variant="light" />
+          <NestarLogo size="large" variant="light" />
         </div>
         
         <div className="relative">
@@ -199,14 +199,14 @@ export default function OTPVerify() {
           </p>
         </div>
         
-        <p className="text-xs text-slate-500 relative">© 2026 DADIS Estates. All rights reserved.</p>
+        <p className="text-xs text-slate-500 relative">© 2026 NEST@R. All rights reserved.</p>
       </div>
 
       {/* Right panel */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <DadisLogo size="large" />
+            <NestarLogo size="large" />
           </div>
 
           <div className="flex items-center justify-center mb-4">

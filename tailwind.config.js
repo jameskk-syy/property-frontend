@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // DADIS Estates brand colors
+        // NEST@R brand colors
         ink: {
           950: '#0d1929',
           900: '#152238',

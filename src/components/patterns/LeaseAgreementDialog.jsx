@@ -6,7 +6,7 @@ import SignaturePad from '../ui/SignaturePad'
 const CLAUSES = [
   {
     title: '1. PARTIES AND PREMISES',
-    body: `Landlord/Property Manager: Dadis Estates Limited
+    body: `Landlord/Property Manager: NEST@R
 
 Note: Copy of National ID or Passport to be provided.`
   },
@@ -156,7 +156,7 @@ c. This Agreement shall be interpreted subject to the laws of Kenya, including a
   },
   {
     title: '18. AUTHORIZED PAYMENT DETAILS',
-    body: `Account Name: DADIS ESTATES LIMITED
+    body: `Account Name: NEST@R
 Co-operative Bank Account: 01192274991800
 Business No.: 400200
 Account No. / Paybill Reference: 40045557
@@ -248,7 +248,7 @@ export default function LeaseAgreementDialog({
 
             <div className="rounded-lg bg-slate-50 border border-slate-100 p-4 mb-6">
               <h4 className="text-sm font-semibold text-slate-700 mb-2">Tenant & Premises Details</h4>
-              {detailRow('Landlord / Property Manager', 'Dadis Estates Limited')}
+              {detailRow('Landlord / Property Manager', 'NEST@R')}
               {detailRow("Tenant's Full Name", tenant.name)}
               {detailRow('National ID / Passport No.', tenant.idNumber)}
               {detailRow('Telephone / Contact', tenant.phone)}
@@ -264,7 +264,24 @@ export default function LeaseAgreementDialog({
               {CLAUSES.map((c) => (
                 <div key={c.title}>
                   <h4 className="text-sm font-semibold text-slate-800 mb-1">{c.title}</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{c.body}</p>
+                  <div className="text-sm text-slate-600 leading-relaxed">
+                    {c.body.split('\n').map((line, i) => {
+                      // Check if line starts with a letter followed by period (a. b. c. etc)
+                      const pointMatch = line.match(/^([a-z])\.\s*(.*)$/i)
+                      if (pointMatch) {
+                        return (
+                          <p key={i} className="mb-2">
+                            <span className="text-blue-600 font-medium">{pointMatch[1]}.</span>{' '}
+                            <span>{pointMatch[2]}</span>
+                          </p>
+                        )
+                      }
+                      // Empty line = paragraph break
+                      if (!line.trim()) return <div key={i} className="h-2" />
+                      // Regular text
+                      return <p key={i} className="mb-2">{line}</p>
+                    })}
+                  </div>
                 </div>
               ))}
             </div>

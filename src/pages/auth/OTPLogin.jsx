@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { ArrowRight, Phone, ArrowLeft } from 'lucide-react'
 import { TextInput, Field } from '../../components/ui/Field'
 import Button from '../../components/ui/Button'
-import DadisLogo from '../../components/ui/DadisLogo'
+import NestarLogo from '../../components/ui/NestarLogo'
 import { api } from '../../api/client'
 
 export default function OTPLogin() {
@@ -52,7 +52,7 @@ export default function OTPLogin() {
         <div className="absolute -right-24 -top-24 w-96 h-96 rounded-full bg-brand-500/10" />
         <div className="absolute -left-16 bottom-0 w-72 h-72 rounded-full bg-brand-500/10" />
         <div className="flex items-center gap-2 relative">
-          <DadisLogo size="large" variant="light" />
+          <NestarLogo size="large" variant="light" />
         </div>
         <div className="relative">
           <h1 className="text-3xl font-semibold leading-tight mb-3">
@@ -63,14 +63,14 @@ export default function OTPLogin() {
             billing, maintenance, and communication in one place.
           </p>
         </div>
-        <p className="text-xs text-slate-500 relative">© 2026 DADIS Estates. All rights reserved.</p>
+        <p className="text-xs text-slate-500 relative">© 2026 NEST@R. All rights reserved.</p>
       </div>
 
       {/* Right panel - OTP form */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <DadisLogo size="large" />
+            <NestarLogo size="large" />
           </div>
 
           <h2 className="text-2xl font-semibold text-slate-900 mb-1">Login with Phone</h2>

@@ -5,7 +5,7 @@ import { NAV_BY_ROLE } from '../../data/navigation'
 import { ROLE_LABELS } from '../../data/roles'
 import { useAuth } from '../../context/AuthContext'
 import Avatar from '../ui/Avatar'
-import DadisLogo from '../ui/DadisLogo'
+import NestarLogo from '../ui/NestarLogo'
 import LogoutConfirmDialog from '../patterns/LogoutConfirmDialog'
 
 function groupItems(items) {
@@ -95,7 +95,7 @@ export default function Sidebar({ open, onClose }) {
         }`}
       >
         <div className="flex items-center gap-2 px-5 h-16 border-b border-slate-200 shrink-0">
-          <DadisLogo size="default" showTagline={false} />
+          <NestarLogo size="default" showTagline={false} />
         </div>
 
         <div className="px-4 py-2.5 text-[11px] font-medium text-slate-500 uppercase tracking-wide shrink-0 flex items-center justify-between">

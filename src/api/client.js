@@ -1296,7 +1296,7 @@ class ApiClient {
       const res = await this.request(`/method/property_management.api.reports.report_branding${param}`)
       if (res && res.message) return res.message
     } catch {}
-    return { company_name: 'Dadis Estates Limited', logo: null, property_name: null }
+    return { company_name: 'NEST@R', logo: null, property_name: null }
   }
 
   async getExpenseReport(property, from_date, to_date) {

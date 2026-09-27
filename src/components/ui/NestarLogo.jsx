@@ -1,13 +1,13 @@
 import { Home } from 'lucide-react'
 
 /**
- * DADIS Estates Logo Component
+ * NEST@R Logo Component
  * 
  * @param {string} size - 'small' | 'default' | 'large'
  * @param {string} variant - 'dark' (default) | 'light' (for dark backgrounds)
- * @param {boolean} showTagline - Show "ESTATES" tagline
+ * @param {boolean} showTagline - Show tagline
  */
-export default function DadisLogo({ 
+export default function NestarLogo({ 
   size = 'default', 
   variant = 'dark',
   showTagline = true,
@@ -25,19 +25,13 @@ export default function DadisLogo({
     : { main: 'text-navy-900', accent: 'text-brand-600', tagline: 'text-navy-500' }
 
   return (
-    <div className={`flex items-baseline ${className}`}>
-      <span className={`font-bold tracking-tight ${s.text}`}>
-        <span className={colors.main}>D</span>
-        <span className={`${colors.accent} inline-flex items-center`}>
-          <Home size={s.icon} className="mx-0.5 -mt-0.5" strokeWidth={2.5} />
-        </span>
-        <span className={colors.main}>DIS</span>
+    <div className={`flex items-center ${className}`}>
+      <span className={`${colors.accent} inline-flex items-center mr-1`}>
+        <Home size={s.icon} strokeWidth={2.5} />
       </span>
-      {showTagline && (
-        <span className={`${s.tagline} font-semibold tracking-[0.15em] ${colors.tagline} uppercase ml-1.5`}>
-          Estates
-        </span>
-      )}
+      <span className={`font-bold tracking-tight ${s.text} ${colors.main}`}>
+        NEST<spam  className={`${colors.accent} inline-flex items-center mr-1`}>@</spam>R
+      </span>
     </div>
   )
 }

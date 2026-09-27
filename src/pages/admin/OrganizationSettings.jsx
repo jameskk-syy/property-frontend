@@ -568,7 +568,7 @@ export default function OrganizationSettings() {
                   </Select>
                 </Field>
                 <Field label="Sender ID / Shortcode">
-                  <TextInput value={msg.sms_sender_id} onChange={(e) => setMsgField('sms_sender_id', e.target.value)} placeholder="e.g. DADIS" />
+                  <TextInput value={msg.sms_sender_id} onChange={(e) => setMsgField('sms_sender_id', e.target.value)} placeholder="e.g. NESTAR" />
                 </Field>
                 <Field label="API Key / Username">
                   <TextInput value={msg.sms_api_key} onChange={(e) => setMsgField('sms_api_key', e.target.value)} placeholder="API key or username" />
@@ -593,10 +593,10 @@ export default function OrganizationSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="From Name">
-                  <TextInput value={msg.email_from_name} onChange={(e) => setMsgField('email_from_name', e.target.value)} placeholder="Dadis Estates" />
+                  <TextInput value={msg.email_from_name} onChange={(e) => setMsgField('email_from_name', e.target.value)} placeholder="NEST@R" />
                 </Field>
                 <Field label="From Email Address">
-                  <TextInput value={msg.email_from_address} onChange={(e) => setMsgField('email_from_address', e.target.value)} placeholder="billing@dadis.co.ke" />
+                  <TextInput value={msg.email_from_address} onChange={(e) => setMsgField('email_from_address', e.target.value)} placeholder="billing@nestar.co.ke" />
                 </Field>
                 <Field label="SMTP Host">
                   <TextInput value={msg.smtp_host} onChange={(e) => setMsgField('smtp_host', e.target.value)} placeholder="smtp.gmail.com" />

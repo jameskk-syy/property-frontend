@@ -46,7 +46,7 @@ function tableHtml(columns, rows) {
  */
 export function exportToExcel({ title, columns, rows, filename, branding = {} }) {
   const safeRows = Array.isArray(rows) ? rows : []
-  const company = branding.company_name || 'Dadis Estates Limited'
+  const company = branding.company_name || 'NEST@R'
   const propertyLine = branding.property_name ? `<div style="font-size:12px;color:#475569;">Property: ${esc(branding.property_name)}</div>` : ''
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8" />
@@ -84,7 +84,7 @@ export function exportToPdf({ title, subtitle, columns, rows, meta = [], brandin
   const win = window.open('', '_blank')
   if (!win) return
 
-  const company = branding.company_name || 'Dadis Estates Limited'
+  const company = branding.company_name || 'NEST@R'
   const propertyName = branding.property_name || null
   const logoUrl = branding.logo || null
 
