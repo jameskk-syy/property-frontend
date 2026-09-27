@@ -4,17 +4,17 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: 3000,
     host: true,
-    allowedHosts: ['.onrender.com', '44f9-105-230-9-137.ngrok-free.app','0e20-154-159-238-162.ngrok-free.app'],
+    allowedHosts: ['mysite.local', '.onrender.com'],
     proxy: {
       '/api': {
         target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8001',
         changeOrigin: true,
         secure: false,
-        cookieDomainRewrite: 'localhost',
+        cookieDomainRewrite: 'mysite.local',
         headers: {
-          'Host': 'property.localhost:8001'
+          'Host': 'mysite.local'
         }
       }
     }
