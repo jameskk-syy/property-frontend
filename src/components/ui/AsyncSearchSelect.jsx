@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronDown, Check, Search, Loader2 } from 'lucide-react'
+import { ChevronDown, Check, Search, Loader2, Plus } from 'lucide-react'
 
 /**
  * Async searchable single-select dropdown with backend search.
  *
  * Props:
  *  - value: the selected value
- *  - onChange: (value) => void
- *  - onSearch: async (query) => [{ value, label }] - function to search backend
+ *  - onChange: (option) => void - receives the full option object or value
+ *  - onSearch: async (query) => [{ value, label }] - legacy search function
+ *  - fetchOptions: async ({ search, page, pageSize }) => { data: [...] } - paginated fetch
+ *  - labelKey: key to use for label from fetched data (default 'label')
+ *  - valueKey: key to use for value from fetched data (default 'value')
  *  - initialOptions: [{ value, label }] - initial options to show before search
  *  - placeholder
  *  - searchPlaceholder
@@ -16,11 +19,16 @@ import { ChevronDown, Check, Search, Loader2 } from 'lucide-react'
  *  - loadingMessage
  *  - debounceMs: debounce time for search (default 300ms)
  *  - minChars: minimum characters before searching (default 0)
+ *  - addNewLabel: label for "Add new" button
+ *  - onAddNew: callback when "Add new" is clicked
  */
 export default function AsyncSearchSelect({
   value,
   onChange,
   onSearch,
+  fetchOptions,
+  labelKey = 'label',
+  valueKey = 'value',
   initialOptions = [],
   placeholder = 'Select…',
   searchPlaceholder = 'Type to search…',
@@ -29,6 +37,8 @@ export default function AsyncSearchSelect({
   loadingMessage = 'Searching…',
   debounceMs = 300,
   minChars = 0,
+  addNewLabel,
+  onAddNew,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -54,21 +64,45 @@ export default function AsyncSearchSelect({
     }
   }, [initialOptions, query])
 
-  // Find selected label from options or initialOptions
+  // Find selected label from value
   useEffect(() => {
-    const sel = options.find((o) => o.value === value) || initialOptions.find((o) => o.value === value)
-    setSelectedLabel(sel?.label || '')
-  }, [value, options, initialOptions])
+    if (value) {
+      // Try to find in options
+      const sel = options.find((o) => (o[valueKey] || o.value) === value || o === value)
+      if (sel) {
+        setSelectedLabel(sel[labelKey] || sel.label || sel.name || value)
+      } else {
+        // Value might be the label itself
+        setSelectedLabel(typeof value === 'string' ? value : '')
+      }
+    } else {
+      setSelectedLabel('')
+    }
+  }, [value, options, labelKey, valueKey])
 
-  // Debounced search
+  // Search function that handles both onSearch and fetchOptions
   const doSearch = useCallback(async (searchQuery) => {
-    if (searchQuery.length < minChars) {
+    if (searchQuery.length < minChars && minChars > 0) {
       setOptions(initialOptions)
       return
     }
     setLoading(true)
     try {
-      const results = await onSearch(searchQuery)
+      let results = []
+      if (fetchOptions) {
+        // New paginated API
+        const response = await fetchOptions({ search: searchQuery, page: 1, pageSize: 20 })
+        const data = response?.data || response || []
+        // Transform to standard format
+        results = data.map(item => ({
+          ...item,
+          value: item[valueKey] || item.name || item.id,
+          label: item[labelKey] || item.name || item[valueKey],
+        }))
+      } else if (onSearch) {
+        // Legacy search API
+        results = await onSearch(searchQuery)
+      }
       setOptions(results || [])
     } catch (err) {
       console.error('AsyncSearchSelect search error:', err)
@@ -76,12 +110,12 @@ export default function AsyncSearchSelect({
     } finally {
       setLoading(false)
     }
-  }, [onSearch, minChars, initialOptions])
+  }, [onSearch, fetchOptions, minChars, initialOptions, labelKey, valueKey])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     
-    if (!query) {
+    if (!query && !open) {
       setOptions(initialOptions)
       return
     }
@@ -93,26 +127,20 @@ export default function AsyncSearchSelect({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, debounceMs, doSearch, initialOptions])
+  }, [query, debounceMs, doSearch, initialOptions, open])
 
   // Load initial options when opening
   const handleOpen = async () => {
     setOpen(true)
     if (options.length === 0 && !loading) {
-      setLoading(true)
-      try {
-        const results = await onSearch('')
-        setOptions(results || [])
-      } catch {
-        setOptions([])
-      } finally {
-        setLoading(false)
-      }
+      doSearch('')
     }
   }
 
-  const pick = (val, label) => {
-    onChange(val)
+  const pick = (option) => {
+    const val = option[valueKey] || option.value || option.name
+    const label = option[labelKey] || option.label || option.name
+    onChange(option) // Pass the full option object
     setSelectedLabel(label)
     setOpen(false)
     setQuery('')
@@ -155,24 +183,42 @@ export default function AsyncSearchSelect({
             ) : options.length === 0 ? (
               <p className="px-3 py-2 text-sm text-slate-400">{emptyMessage}</p>
             ) : (
-              options.map((o) => {
-                const isSel = o.value === value
+              options.map((o, idx) => {
+                const optValue = o[valueKey] || o.value || o.name
+                const optLabel = o[labelKey] || o.label || o.name
+                const isSel = optValue === value || o.name === value
                 return (
                   <button
-                    key={o.value}
+                    key={optValue || idx}
                     type="button"
-                    onClick={() => pick(o.value, o.label)}
+                    onClick={() => pick(o)}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-slate-50 ${
                       isSel ? 'bg-brand-50/60' : ''
                     }`}
                   >
-                    <span className="flex-1 text-slate-700 truncate">{o.label}</span>
+                    <span className="flex-1 text-slate-700 truncate">{optLabel}</span>
                     {isSel && <Check className="w-4 h-4 text-brand-500 shrink-0" />}
                   </button>
                 )
               })
             )}
           </div>
+          {/* Add New button */}
+          {addNewLabel && onAddNew && (
+            <div className="border-t border-slate-100 p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false)
+                  onAddNew()
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-brand-600 hover:bg-brand-50 rounded-md"
+              >
+                <Plus size={14} />
+                {addNewLabel}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
