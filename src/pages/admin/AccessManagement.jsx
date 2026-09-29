@@ -39,7 +39,7 @@ export default function AccessManagement() {
   const [userForm, setUserForm] = useState({
     name: '',
     email: '',
-    password: '',
+    phone: '',
     roleId: 'admin',
     status: 'Active',
     allowed_modules: [...SECTION_NAMES]
@@ -134,7 +134,7 @@ export default function AccessManagement() {
     setUserForm({
       name: '',
       email: '',
-      password: '',
+      phone: '',
       roleId: 'admin',
       status: 'Active',
       allowed_modules: [...SECTION_NAMES]
@@ -146,7 +146,7 @@ export default function AccessManagement() {
     setUserForm({
       name: user.name,
       email: user.email,
-      password: '',
+      phone: user.phone || '',
       roleId: user.roleId || user.role || 'admin',
       status: user.status || 'Active',
       allowed_modules: user.allowed_modules || [...SECTION_NAMES]
@@ -155,7 +155,10 @@ export default function AccessManagement() {
   }
 
   const submitUser = async () => {
-    if (!userForm.name || !userForm.email) return
+    if (!userForm.name || !userForm.phone) {
+      showToast('Name and phone number are required.', 'error')
+      return
+    }
 
     // Module access is inherited from the assigned role.
     const allowedModules = modulesForRole(userForm.roleId)
@@ -163,8 +166,8 @@ export default function AccessManagement() {
     try {
       await api.createUser({
         name: userForm.name,
-        email: userForm.email,
-        password: userForm.password || null,
+        email: userForm.email || null,
+        phone: userForm.phone,
         roleId: userForm.roleId,
         status: userForm.status,
         allowed_modules: allowedModules
@@ -283,7 +286,7 @@ export default function AccessManagement() {
                     <Avatar name={r.name} size={32} />
                     <div>
                       <p className="font-medium text-slate-800">{r.name}</p>
-                      <p className="text-xs text-slate-400">{r.email}</p>
+                      <p className="text-xs text-slate-400">{r.phone || r.email}</p>
                     </div>
                   </div>
                 ) },
@@ -370,17 +373,11 @@ export default function AccessManagement() {
           <Field label="Full name">
             <TextInput required value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} placeholder="e.g. Peter Njenga" />
           </Field>
-          <Field label="Email address">
-            <TextInput type="email" required value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} placeholder="name@nest.co.ke" />
+          <Field label="Phone number">
+            <TextInput required value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} placeholder="+254 7XX XXX XXX" />
           </Field>
-          <Field label={userModal.editing ? "New Password (optional)" : "Password"}>
-            <TextInput
-              type="password"
-              required={!userModal.editing}
-              value={userForm.password}
-              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-              placeholder={userModal.editing ? "Leave blank to keep unchanged" : "••••••••"}
-            />
+          <Field label="Email address (optional)">
+            <TextInput type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} placeholder="name@nest.co.ke" />
           </Field>
           <Field label="Role">
             <Select value={userForm.roleId} onChange={(e) => setUserForm({ ...userForm, roleId: e.target.value })}>
@@ -394,6 +391,10 @@ export default function AccessManagement() {
             </Select>
           </Field>
         </div>
+        
+        <p className="text-xs text-slate-500 mt-2 bg-blue-50 p-2 rounded border border-blue-100">
+          <strong>Note:</strong> Password will be auto-generated and sent to the user via SMS/WhatsApp based on your messaging settings.
+        </p>
 
         <div className="mt-4">
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
@@ -425,10 +426,10 @@ export default function AccessManagement() {
         {userModal.editing && (
           <button
             type="button"
-            onClick={() => showToast(`Password reset link sent to ${userForm.email}.`)}
+            onClick={() => showToast(`Password reset instructions sent to ${userForm.phone || userForm.email}.`)}
             className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 mt-2"
           >
-            <KeyRound size={13} /> Send password reset link
+            <KeyRound size={13} /> Reset password
           </button>
         )}
       </FormModal>
