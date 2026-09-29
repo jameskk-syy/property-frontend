@@ -70,14 +70,22 @@ export default function AccessManagement() {
   const userCountFor = (roleId) => users.filter((u) => u.roleId === roleId || u.role === roleId).length
 
   // Modules are attached to the ROLE, not the individual user. Derive the
-  // list of module sections a user can access from their assigned role's
-  // permission map, so users always inherit exactly what the role grants.
+  // list of module KEYS a user can access from their assigned role's
+  // permission map. This returns individual module keys (e.g., 'properties', 'billing')
+  // so granular permission control works correctly.
   const modulesForRole = (roleId) => {
     const role = roles.find((r) => r.id === roleId)
     const perms = role?.permissions
-    if (!perms) return [...SECTION_NAMES]
+    if (!perms) return [...ALL_MODULE_KEYS] // Full access if no permissions defined
+    // Return only the module keys that are explicitly granted
+    return ALL_MODULE_KEYS.filter((key) => perms[key] === true)
+  }
+  
+  // Get section names for display purposes (used in UI to show which sections have access)
+  const sectionsForRole = (roleId) => {
+    const allowedKeys = modulesForRole(roleId)
     return PERMISSION_MODULES
-      .filter((section) => section.modules.some((m) => perms[m.key]))
+      .filter((section) => section.modules.some((m) => allowedKeys.includes(m.key)))
       .map((section) => section.section)
   }
 
@@ -402,14 +410,18 @@ export default function AccessManagement() {
           </label>
           <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200">
             {(() => {
-              const inherited = modulesForRole(userForm.roleId)
-              return inherited.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {inherited.map((section) => (
-                    <span key={section} className="text-[11px] font-medium px-2 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-100">
-                      {section}
-                    </span>
-                  ))}
+              const inheritedSections = sectionsForRole(userForm.roleId)
+              const inheritedModules = modulesForRole(userForm.roleId)
+              return inheritedModules.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {inheritedSections.map((section) => (
+                      <span key={section} className="text-[11px] font-medium px-2 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-100">
+                        {section}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400">{inheritedModules.length} individual modules granted</p>
                 </div>
               ) : (
                 <p className="text-xs text-slate-400">

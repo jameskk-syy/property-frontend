@@ -30,7 +30,7 @@ export default function NestarLogo({
         <Home size={s.icon} strokeWidth={2.5} />
       </span>
       <span className={`font-bold tracking-tight ${s.text} ${colors.main}`}>
-        NEST<spam  className={`${colors.accent} inline-flex items-center mr-1`}>@</spam>R
+        NEST
       </span>
     </div>
   )
