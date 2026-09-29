@@ -82,21 +82,45 @@ export function AuthProvider({ children }) {
     }
   }, [user])
 
-  // Re-sync allowed_modules from backend periodically
+  // Re-sync allowed_modules from backend periodically (every 60 seconds)
+  // This ensures role permission changes are picked up without requiring logout
   useEffect(() => {
-    if (!user || !user.id || user.role === ROLES.ADMIN) return
+    if (!user || !user.id) return
 
-    api.getUsers().then((usersList) => {
-      const target = String(user.id).toLowerCase()
-      const found = usersList.find(
-        (u) => (u.id && u.id.toLowerCase() === target) || 
-               (u.email && u.email.toLowerCase() === (user.email || '').toLowerCase())
-      )
-      if (found && Array.isArray(found.allowed_modules)) {
-        setUser((prev) => prev ? { ...prev, allowed_modules: found.allowed_modules } : null)
+    const syncPermissions = async () => {
+      try {
+        const usersList = await api.getUsers()
+        const target = String(user.id).toLowerCase()
+        const found = usersList.find(
+          (u) => (u.id && u.id.toLowerCase() === target) || 
+                 (u.email && u.email.toLowerCase() === (user.email || '').toLowerCase())
+        )
+        if (found && Array.isArray(found.allowed_modules)) {
+          setUser((prev) => {
+            if (!prev) return null
+            // Only update if permissions changed
+            const currentModules = JSON.stringify(prev.allowed_modules || [])
+            const newModules = JSON.stringify(found.allowed_modules)
+            if (currentModules !== newModules) {
+              console.log('[Auth] Permissions updated from backend')
+              return { ...prev, allowed_modules: found.allowed_modules }
+            }
+            return prev
+          })
+        }
+      } catch (err) {
+        // Silent fail - permissions will sync on next attempt
       }
-    }).catch(() => {})
-  }, [user?.id, user?.role])
+    }
+
+    // Sync immediately on mount
+    syncPermissions()
+
+    // Then sync every 60 seconds
+    const interval = setInterval(syncPermissions, 60000)
+
+    return () => clearInterval(interval)
+  }, [user?.id])
 
   /**
    * Login with JWT tokens
