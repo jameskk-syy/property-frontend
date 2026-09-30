@@ -30,7 +30,7 @@ export default function CaretakerProperties() {
       }
       // Pull units for each assigned property and merge - handle paginated response
       const results = await Promise.all(
-        mine.map((p) => api.getUnits(p.id, { page: 1, pageSize: 100 }).then((result) => {
+        mine.map((p) => api.getUnits(p.id, { page: 1, pageSize: 1000 }).then((result) => {
           // Handle paginated response: { data: [...], pagination: {...} }
           return result?.data || result || []
         }).catch(() => []))
@@ -89,8 +89,14 @@ export default function CaretakerProperties() {
     showToast(`Exported ${propUnits.length} units for ${propName}.`)
   }
 
-  const occupied = units.filter((u) => u.status === 'Occupied').length
-  const vacant = units.filter((u) => u.status === 'Vacant').length
+  // Unit totals come from the per-property summary (getMyProperties), a grouped
+  // DB aggregate, so they stay accurate even when a property has more than the
+  // fetched page of units. Counting the merged unit list would cap per property.
+  const totalUnitsCount = myProperties.reduce((s, p) => s + (p.units || 0), 0) || units.length
+  const occupied = myProperties.reduce((s, p) => s + (p.occupied || 0), 0)
+    || units.filter((u) => u.status === 'Occupied').length
+  const vacant = myProperties.reduce((s, p) => s + (p.vacant || 0), 0)
+    || units.filter((u) => u.status === 'Vacant').length
 
   return (
     <ListPageTemplate
@@ -115,7 +121,7 @@ export default function CaretakerProperties() {
       }
       stats={[
         { label: 'Assigned Properties', value: myProperties.length, icon: Building2 },
-        { label: 'Total Units', value: units.length, icon: Home, tone: 'blue' },
+        { label: 'Total Units', value: totalUnitsCount, icon: Home, tone: 'blue' },
         { label: 'Occupied Units', value: occupied, icon: CheckCircle2, tone: 'brand' },
         { label: 'Vacant Units', value: vacant, icon: Home, tone: 'orange' },
       ]}

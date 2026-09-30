@@ -15,13 +15,26 @@ export default function VacancyManagement() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [propertyFilter, setPropertyFilter] = useState('')
+  const [propSummary, setPropSummary] = useState([])
   const [form, setForm] = useState({ property: properties[0]?.name || 'Greenview Apartments', unit: '', rent: '' })
+
+  // Property summary carries accurate per-property vacant counts (grouped DB
+  // aggregate), used for the "Open Vacancies" stat so it isn't capped by the
+  // unit list's page size.
+  useEffect(() => {
+    let mounted = true
+    api.getProperties().then((res) => {
+      if (mounted && Array.isArray(res)) setPropSummary(res)
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [])
 
   useEffect(() => {
     let mounted = true
     setLoading(true)
-    // Fetch vacant units, scoped to the selected property (server-side).
-    api.getUnits(propertyFilter || null, { page: 1, pageSize: 100 }).then((result) => {
+    // Fetch vacant units, scoped to the selected property (server-side). Use a
+    // high page size so large portfolios aren't truncated at the default 100.
+    api.getUnits(propertyFilter || null, { page: 1, pageSize: 1000 }).then((result) => {
       if (mounted) {
         // Handle paginated response: { data: [...], pagination: {...} }
         const units = result?.data || result || []
@@ -41,6 +54,16 @@ export default function VacancyManagement() {
     }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
   }, [propertyFilter])
+
+  // Accurate open-vacancies count from the summary (respects the property filter).
+  const openVacancies = (() => {
+    const scoped = propertyFilter
+      ? propSummary.filter((p) => p.id === propertyFilter)
+      : propSummary
+    const total = scoped.reduce((s, p) => s + (p.vacant || 0), 0)
+    // Fall back to the fetched list only when the summary has no data.
+    return total || vacancies.length
+  })()
 
   const handleSubmit = () => {
     if (!form.unit || !form.rent) return
@@ -66,7 +89,7 @@ export default function VacancyManagement() {
           </div>
         }
         stats={[
-          { label: 'Open Vacancies', value: vacancies.length, icon: Store },
+          { label: 'Open Vacancies', value: openVacancies, icon: Store },
           { label: 'Total Views', value: vacancies.reduce((s, v) => s + (v.views || 0), 0), icon: Eye, tone: 'blue' },
           { label: 'Total Leads', value: vacancies.reduce((s, v) => s + (v.leads || 0), 0), icon: Users, tone: 'brand' },
           { label: 'Avg. Days Listed', value: 12, icon: Store, tone: 'orange' },

@@ -22,7 +22,7 @@ export default function PropertyUnitManagement() {
 
   useEffect(() => {
     let mounted = true
-    Promise.allSettled([api.getProperties(), api.getUnits(null, { page: 1, pageSize: 100 })]).then(([p, u]) => {
+    Promise.allSettled([api.getProperties(), api.getUnits(null, { page: 1, pageSize: 1000 })]).then(([p, u]) => {
       if (!mounted) return
       if (p.status === 'fulfilled' && Array.isArray(p.value)) setPropList(p.value)
       // Handle paginated response: { data: [...], pagination: {...} }
@@ -35,18 +35,23 @@ export default function PropertyUnitManagement() {
     return () => { mounted = false }
   }, [])
 
-  // Unit counts: prefer the real Property Unit list; if it's empty, fall back to
-  // the per-property counts returned by getProperties (total_units/occupied).
-  const hasUnits = unitList && unitList.length > 0
-  const totalUnits = hasUnits
-    ? unitList.length
-    : propList.reduce((s, p) => s + (p.units || 0), 0)
-  const occupiedUnits = hasUnits
-    ? unitList.filter((u) => u.status === 'Occupied').length
-    : propList.reduce((s, p) => s + (p.occupied || 0), 0)
-  const vacantUnits = hasUnits
-    ? unitList.filter((u) => u.status === 'Vacant').length
-    : Math.max(0, totalUnits - occupiedUnits)
+  // Unit counts come from the per-property summary (getProperties), which is a
+  // grouped DB aggregate on the backend and therefore accurate for the whole
+  // portfolio. Counting the fetched unit list would be wrong because that list
+  // is page-capped (default 100 rows), so a portfolio with >100 units would
+  // under-report. Fall back to the unit list only if the summary has no counts.
+  const summaryTotal = propList.reduce((s, p) => s + (p.units || 0), 0)
+  const summaryOccupied = propList.reduce((s, p) => s + (p.occupied || 0), 0)
+  const summaryVacant = propList.reduce((s, p) => s + (p.vacant || 0), 0)
+  const hasSummaryCounts = summaryTotal > 0
+
+  const totalUnits = hasSummaryCounts ? summaryTotal : unitList.length
+  const occupiedUnits = hasSummaryCounts
+    ? summaryOccupied
+    : unitList.filter((u) => u.status === 'Occupied').length
+  const vacantUnits = hasSummaryCounts
+    ? (summaryVacant || Math.max(0, summaryTotal - summaryOccupied))
+    : unitList.filter((u) => u.status === 'Vacant').length
 
   const propertyColumns = [
     { key: 'name', header: 'Property', render: (r) => (

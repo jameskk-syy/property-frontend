@@ -33,6 +33,7 @@ const UNIT_TYPES = [
   'Bedsitter',
   'Studio',
   '1 Bedroom',
+  'Singles',
   '2 Bedroom',
   '3 Bedroom',
   '4 Bedroom',
