@@ -17,7 +17,7 @@ import { useToast } from '../../context/ToastContext'
 import { formatKsh } from '../../data/mockData'
 import { api } from '../../api/client'
 
-const PROPERTY_TYPES = ['Apartment', 'Villa / Maisonette', 'Bedsitter Block', 'Commercial Complex', 'Mixed Use']
+const PROPERTY_TYPES = ['Apartment', 'Villa', 'Bedsitters', 'Singles', 'Commercial Complex', 'Mixed Use']
 
 // Kenya's 47 counties for the County selector.
 const COUNTIES = [
