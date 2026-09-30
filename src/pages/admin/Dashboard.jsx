@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Building2, Users, Wallet, AlertTriangle, ArrowUpRight, CheckCircle2, Clock, Receipt } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid, Legend } from 'recharts'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
 import Card from '../../components/ui/Card'
@@ -13,6 +13,12 @@ import { formatKsh } from '../../data/mockData'
 import { useAuth } from '../../context/AuthContext'
 import { api } from '../../api/client'
 
+// Palette cycled across properties in the per-property rent chart.
+const PROPERTY_COLORS = [
+  '#14b98a', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444',
+  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+]
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -22,6 +28,7 @@ export default function AdminDashboard() {
   const [totalOverdue, setTotalOverdue] = useState(0)
   const [revenueTrend, setRevenueTrend] = useState([])
   const [occupancyBreakdown, setOccupancyBreakdown] = useState([])
+  const [rentByProperty, setRentByProperty] = useState({ properties: [], series: [] })
   // Unit totals come from the same source as the summary/occupancy pie so the
   // "Occupied Units" card always matches the Properties & Units page.
   const [unitTotals, setUnitTotals] = useState(null)
@@ -29,6 +36,12 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     let mounted = true
+
+    // Monthly rent collected per property (grouped bar chart). Independent of the
+    // summary load so a slow query never blocks the KPI cards.
+    api.getRentCollectionByProperty(6)
+      .then((res) => { if (mounted && res) setRentByProperty(res) })
+      .catch(() => {})
 
     Promise.allSettled([api.getDashboardSummary(), api.getProperties()]).then(([s, p]) => {
       if (!mounted) return
@@ -135,6 +148,41 @@ export default function AdminDashboard() {
           )}
         </Card>
       </div>
+      )}
+
+      {/* Monthly rent collected per property */}
+      {!loading && (
+        <Card className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Rent Collected by Property</h3>
+              <p className="text-xs text-slate-400">Monthly rent recognised in the ledger, per property</p>
+            </div>
+            <span className="text-xs text-slate-400">Last 6 months</span>
+          </div>
+          {rentByProperty.properties.length > 0 && rentByProperty.series.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={rentByProperty.series} margin={{ top: 5, right: 8, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} tickFormatter={(v) => `${v / 1000}k`} />
+                <Tooltip formatter={(v) => formatKsh(v)} cursor={{ fill: '#f8fafc' }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {rentByProperty.properties.map((p, i) => (
+                  <Bar
+                    key={p.key}
+                    dataKey={p.key}
+                    name={p.name}
+                    fill={PROPERTY_COLORS[i % PROPERTY_COLORS.length]}
+                    radius={[4, 4, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm text-slate-400 py-8 text-center">No rent collection data available yet.</p>
+          )}
+        </Card>
       )}
 
       {loading && (

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Receipt, Wallet, PieChart as PieIcon, CheckCircle } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { Field, TextInput, Select, TextArea } from '../../components/ui/Field'
@@ -16,20 +17,26 @@ export default function ExpenseManagement() {
   const [categories, setCategories] = useState([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [form, setForm] = useState({ vendor: '', category: '', amount: '', property: '', description: '' })
 
   useEffect(() => {
     let mounted = true
-    api.getExpenses({ page: 1, pageSize: 100 }).then((res) => {
+    setLoading(true)
+    api.getExpenses({ page: 1, pageSize: 100, property: propertyFilter || null }).then((res) => {
       if (mounted) {
         // Handle paginated response: { data: [...], pagination: {...} }
         const list = res?.data || res || []
-        if (Array.isArray(list) && list.length > 0) setExpenses(list)
+        setExpenses(Array.isArray(list) ? list : [])
       }
     }).catch(() => {}).finally(() => {
       if (mounted) setLoading(false)
     })
+    return () => { mounted = false }
+  }, [propertyFilter])
 
+  useEffect(() => {
+    let mounted = true
     api.getProperties().then((res) => {
       if (mounted && res && res.length > 0) setProperties(res)
     }).catch(() => {})
@@ -58,9 +65,9 @@ export default function ExpenseManagement() {
         description: form.description
       })
       showToast(`Expense of ${formatKsh(form.amount)} raised for approval.`)
-      const updated = await api.getExpenses({ page: 1, pageSize: 100 })
+      const updated = await api.getExpenses({ page: 1, pageSize: 100, property: propertyFilter || null })
       const list = updated?.data || updated || []
-      if (Array.isArray(list) && list.length > 0) setExpenses(list)
+      setExpenses(Array.isArray(list) ? list : [])
     } catch (err) {
       showToast(err?.message || 'Could not raise expense.')
     }
@@ -73,7 +80,12 @@ export default function ExpenseManagement() {
       <ListPageTemplate
         title="Expense Management"
         description="Track and approve property operating expenses."
-        actions={<Button icon={Plus} onClick={() => setOpen(true)}>Add Expense</Button>}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />
+            <Button icon={Plus} onClick={() => setOpen(true)}>Add Expense</Button>
+          </div>
+        }
         stats={[
           { label: 'Total Expenses', value: formatKsh(totalExpenses), icon: Wallet, tone: 'red' },
           { label: 'Records', value: expenses.length, icon: Receipt },

@@ -7,6 +7,7 @@ import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Tabs from '../../components/ui/Tabs'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import { StatCardsSkeleton } from '../../components/ui/Skeleton'
 import { formatKsh } from '../../data/mockData'
 import { api } from '../../api/client'
@@ -23,12 +24,13 @@ export default function Invoices() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(8)
   const [opening, setOpening] = useState(null)
+  const [propertyFilter, setPropertyFilter] = useState('')
 
   // Fetch invoices with pagination
-  const fetchInvoices = useCallback(async (page = 1, size = 8, search = '', kind = null) => {
+  const fetchInvoices = useCallback(async (page = 1, size = 8, search = '', kind = null, property = '') => {
     setLoading(true)
     try {
-      const res = await api.getAllInvoices({ kind, page, pageSize: size, search })
+      const res = await api.getAllInvoices({ kind, page, pageSize: size, search, property: property || null })
       if (res && res.data) {
         setRows(res.data)
         setPagination(res.pagination)
@@ -44,30 +46,31 @@ export default function Invoices() {
     }
   }, [])
 
-  // Initial load and tab change
+  // Initial load, tab change, and property filter change
   useEffect(() => {
-    fetchInvoices(1, pageSize, searchQuery, KIND[tab])
+    fetchInvoices(1, pageSize, searchQuery, KIND[tab], propertyFilter)
     setCurrentPage(1)
-  }, [tab, fetchInvoices, pageSize])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, fetchInvoices, pageSize, propertyFilter])
 
   // Handle page change
   const handlePageChange = useCallback((newPage, newPageSize) => {
     if (newPageSize && newPageSize !== pageSize) {
       setPageSize(newPageSize)
       setCurrentPage(1)
-      fetchInvoices(1, newPageSize, searchQuery, KIND[tab])
+      fetchInvoices(1, newPageSize, searchQuery, KIND[tab], propertyFilter)
     } else {
       setCurrentPage(newPage)
-      fetchInvoices(newPage, pageSize, searchQuery, KIND[tab])
+      fetchInvoices(newPage, pageSize, searchQuery, KIND[tab], propertyFilter)
     }
-  }, [fetchInvoices, searchQuery, pageSize, tab])
+  }, [fetchInvoices, searchQuery, pageSize, tab, propertyFilter])
 
   // Handle search
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
     setCurrentPage(1)
-    fetchInvoices(1, pageSize, query, KIND[tab])
-  }, [fetchInvoices, pageSize, tab])
+    fetchInvoices(1, pageSize, query, KIND[tab], propertyFilter)
+  }, [fetchInvoices, pageSize, tab, propertyFilter])
 
   const sales = rows.filter((r) => r.type === 'Sales')
   const purchase = rows.filter((r) => r.type === 'Purchase')
@@ -114,6 +117,7 @@ export default function Invoices() {
       <PageHeader
         title="Invoices"
         description="All sales and purchase invoices. View and print any document."
+        actions={<PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />}
       />
 
       {loading ? (

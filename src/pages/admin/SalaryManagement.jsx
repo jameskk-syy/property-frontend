@@ -3,6 +3,7 @@ import { Banknote, Users, Plus, PlayCircle, Upload } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
 import ImportStaffModal from '../../components/patterns/ImportStaffModal'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { Field, TextInput, Select } from '../../components/ui/Field'
@@ -19,7 +20,7 @@ const DESIGNATIONS = [
   'Accountant',
 ]
 
-const emptyForm = { name: '', role: 'Caretaker', property: '', salary: '', phone: '', email: '' }
+const emptyForm = { name: '', role: 'Caretaker', property: '', salary: '', phone: '', email: '', applyDeductions: true }
 
 export default function SalaryManagement() {
   const { showToast } = useToast()
@@ -35,14 +36,15 @@ export default function SalaryManagement() {
   const [payrollScope, setPayrollScope] = useState('')
   const [importOpen, setImportOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(8)
 
   // Fetch employees with pagination
-  const fetchEmployees = useCallback(async (page = 1, size = 8, search = '') => {
+  const fetchEmployees = useCallback(async (page = 1, size = 8, search = '', property = '') => {
     setLoading(true)
     try {
-      const res = await api.getEmployees({ page, pageSize: size, search })
+      const res = await api.getEmployees({ page, pageSize: size, search, property: property || null })
       if (res && res.data) {
         setEmployees(res.data)
         setPagination(res.pagination)
@@ -57,32 +59,38 @@ export default function SalaryManagement() {
     }
   }, [])
 
-  // Initial load
+  // Load properties once for the filter + assignment dropdowns.
   useEffect(() => {
-    fetchEmployees(1, pageSize, '')
     api.getProperties().then((res) => {
       if (res && res.length > 0) setProperties(res)
     }).catch(() => {})
-  }, [fetchEmployees, pageSize])
+  }, [])
+
+  // (Re)load employees whenever the page size or property filter changes.
+  useEffect(() => {
+    setCurrentPage(1)
+    fetchEmployees(1, pageSize, searchQuery, propertyFilter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchEmployees, pageSize, propertyFilter])
 
   // Handle page change
   const handlePageChange = useCallback((newPage, newPageSize) => {
     if (newPageSize && newPageSize !== pageSize) {
       setPageSize(newPageSize)
       setCurrentPage(1)
-      fetchEmployees(1, newPageSize, searchQuery)
+      fetchEmployees(1, newPageSize, searchQuery, propertyFilter)
     } else {
       setCurrentPage(newPage)
-      fetchEmployees(newPage, pageSize, searchQuery)
+      fetchEmployees(newPage, pageSize, searchQuery, propertyFilter)
     }
-  }, [fetchEmployees, searchQuery, pageSize])
+  }, [fetchEmployees, searchQuery, pageSize, propertyFilter])
 
   // Handle search
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
     setCurrentPage(1)
-    fetchEmployees(1, pageSize, query)
-  }, [fetchEmployees, pageSize])
+    fetchEmployees(1, pageSize, query, propertyFilter)
+  }, [fetchEmployees, pageSize, propertyFilter])
 
   // Live statutory preview (PAYE / NSSF / SHIF / Housing Levy) as gross changes
   useEffect(() => {
@@ -113,6 +121,7 @@ export default function SalaryManagement() {
         salary: Number(form.salary),
         phone: form.phone || null,
         email: form.email || null,
+        apply_deductions: form.applyDeductions,
       })
       showToast(
         res && res.payroll_enrolled === false
@@ -180,6 +189,7 @@ export default function SalaryManagement() {
         loading={loading}
         actions={
           <div className="flex items-center gap-2.5">
+            <PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />
             <div className="w-52">
               <Select value={payrollScope} onChange={(e) => setPayrollScope(e.target.value)} className="text-sm">
                 <option value="">Whole organization</option>
@@ -247,20 +257,40 @@ export default function SalaryManagement() {
           <Field label="Email (optional)">
             <TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@nest.co.ke" />
           </Field>
+          <Field label="Apply Statutory Deductions">
+            <Select
+              value={form.applyDeductions ? 'yes' : 'no'}
+              onChange={(e) => setForm({ ...form, applyDeductions: e.target.value === 'yes' })}
+            >
+              <option value="yes">Yes — deduct PAYE, NSSF, SHIF, Housing Levy</option>
+              <option value="no">No — pay gross, deduct nothing</option>
+            </Select>
+          </Field>
         </div>
 
         {statutory && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5 mt-4">
-            <p className="font-semibold text-slate-700">Statutory deductions preview</p>
-            <div className="flex justify-between"><span>PAYE</span><span>{formatKsh(statutory.paye)}</span></div>
-            <div className="flex justify-between"><span>NSSF</span><span>{formatKsh(statutory.nssf)}</span></div>
-            <div className="flex justify-between"><span>SHIF</span><span>{formatKsh(statutory.shif)}</span></div>
-            <div className="flex justify-between"><span>Housing Levy</span><span>{formatKsh(statutory.housing_levy)}</span></div>
-            <div className="flex justify-between font-semibold text-slate-800 border-t border-slate-200 pt-1.5">
-              <span>Estimated Net Pay</span>
-              <span>{formatKsh(statutory.net_pay != null ? statutory.net_pay : (Number(form.salary) - (statutory.total_deductions || 0)))}</span>
+          form.applyDeductions ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5 mt-4">
+              <p className="font-semibold text-slate-700">Statutory deductions preview</p>
+              <div className="flex justify-between"><span>PAYE</span><span>{formatKsh(statutory.paye)}</span></div>
+              <div className="flex justify-between"><span>NSSF</span><span>{formatKsh(statutory.nssf)}</span></div>
+              <div className="flex justify-between"><span>SHIF</span><span>{formatKsh(statutory.shif)}</span></div>
+              <div className="flex justify-between"><span>Housing Levy</span><span>{formatKsh(statutory.housing_levy)}</span></div>
+              <div className="flex justify-between font-semibold text-slate-800 border-t border-slate-200 pt-1.5">
+                <span>Estimated Net Pay</span>
+                <span>{formatKsh(statutory.net_pay != null ? statutory.net_pay : (Number(form.salary) - (statutory.total_deductions || 0)))}</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-1.5 mt-4">
+              <p className="font-semibold">Deductions disabled for this staff member</p>
+              <div className="flex justify-between"><span>Statutory deductions</span><span>{formatKsh(0)}</span></div>
+              <div className="flex justify-between font-semibold border-t border-emerald-200 pt-1.5">
+                <span>Net Pay (= Gross)</span>
+                <span>{formatKsh(Number(form.salary) || 0)}</span>
+              </div>
+            </div>
+          )
         )}
       </FormModal>
     </>

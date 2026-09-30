@@ -3,6 +3,7 @@ import { Plus, Send } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import ReminderDialog from '../../components/patterns/ReminderDialog'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Avatar from '../../components/ui/Avatar'
@@ -24,12 +25,13 @@ export default function TenantBillingManagement() {
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(8)
+  const [propertyFilter, setPropertyFilter] = useState('')
 
-  // Fetch tenants with pagination
-  const fetchTenants = useCallback(async (page = 1, size = 8, search = '') => {
+  // Fetch tenants with pagination (optionally scoped to a property server-side)
+  const fetchTenants = useCallback(async (page = 1, size = 8, search = '', property = '') => {
     setLoading(true)
     try {
-      const res = await api.getTenants({ page, pageSize: size, search })
+      const res = await api.getTenants({ page, pageSize: size, search, property: property || null })
       if (res && res.data) {
         setTenantList(res.data)
         setPagination(res.pagination)
@@ -41,29 +43,31 @@ export default function TenantBillingManagement() {
     }
   }, [])
 
-  // Initial load
+  // Initial load + reload when the property filter changes
   useEffect(() => {
-    fetchTenants(1, pageSize, '')
-  }, [fetchTenants, pageSize])
+    setCurrentPage(1)
+    fetchTenants(1, pageSize, searchQuery, propertyFilter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchTenants, pageSize, propertyFilter])
 
   // Handle page change (now receives page and pageSize)
   const handlePageChange = useCallback((newPage, newPageSize) => {
     if (newPageSize && newPageSize !== pageSize) {
       setPageSize(newPageSize)
       setCurrentPage(1)
-      fetchTenants(1, newPageSize, searchQuery)
+      fetchTenants(1, newPageSize, searchQuery, propertyFilter)
     } else {
       setCurrentPage(newPage)
-      fetchTenants(newPage, pageSize, searchQuery)
+      fetchTenants(newPage, pageSize, searchQuery, propertyFilter)
     }
-  }, [fetchTenants, searchQuery, pageSize])
+  }, [fetchTenants, searchQuery, pageSize, propertyFilter])
 
   // Handle search
   const handleSearch = useCallback((query) => {
     setSearchQuery(query)
     setCurrentPage(1)
-    fetchTenants(1, pageSize, query)
-  }, [fetchTenants, pageSize])
+    fetchTenants(1, pageSize, query, propertyFilter)
+  }, [fetchTenants, pageSize, propertyFilter])
 
   const overdue = tenantList.filter((t) => t.status === 'Overdue')
   const totalBalance = tenantList.reduce((s, t) => s + (t.balance || 0), 0)
@@ -117,7 +121,12 @@ export default function TenantBillingManagement() {
       <ListPageTemplate
         title="Tenants & Billing"
         description="Tenant directory with automated rent invoicing and balances. Click a tenant to view their full profile."
-        actions={<Link to="/admin/tenant-onboarding"><Button icon={Plus}>Add Tenant</Button></Link>}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />
+            <Link to="/admin/tenant-onboarding"><Button icon={Plus}>Add Tenant</Button></Link>
+          </div>
+        }
         onRowClick={(row) => navigate(`/admin/tenants/${row.id}`)}
         loading={loading}
         stats={[

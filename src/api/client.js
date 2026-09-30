@@ -554,8 +554,8 @@ class ApiClient {
   }
 
   // --- TENANTS ---
-  async getTenants({ page = 1, pageSize = 8, search = '' } = {}) {
-    const result = await this.pmApi('directory.list_tenants', { page, page_size: pageSize, search })
+  async getTenants({ page = 1, pageSize = 8, search = '', property = null } = {}) {
+    const result = await this.pmApi('directory.list_tenants', { page, page_size: pageSize, search, property })
     
     // Handle new paginated response format
     if (result && result.data && result.pagination) {
@@ -943,9 +943,10 @@ class ApiClient {
   }
 
   /** List incoming bank/M-Pesa transactions not yet reconciled. */
-  async listUnreconciled({ bankAccount = null, limit = 100 } = {}) {
+  async listUnreconciled({ bankAccount = null, limit = 100, property = null } = {}) {
     const qs = new URLSearchParams()
     if (bankAccount) qs.append('bank_account', bankAccount)
+    if (property) qs.append('property', property)
     if (limit) qs.append('limit', String(limit))
     const data = await this.pmApi(`reconciliation.list_unreconciled?${qs.toString()}`)
     return Array.isArray(data) ? data : []
@@ -1264,6 +1265,19 @@ class ApiClient {
     return null
   }
 
+  /**
+   * Monthly rent collected broken down per property (for the admin dashboard
+   * grouped bar chart). Returns { months, properties:[{key,id,name}], series }.
+   */
+  async getRentCollectionByProperty(months = 6) {
+    try {
+      const res = await this.request(`/method/property_management.api.reports.rent_collection_by_property?months=${encodeURIComponent(months)}`)
+      const data = res && res.message
+      if (data && Array.isArray(data.series)) return data
+    } catch {}
+    return { months: [], properties: [], series: [] }
+  }
+
   async getRevenueAndExpenseTrend(property, months = 6) {
     try {
       const params = new URLSearchParams()
@@ -1309,6 +1323,23 @@ class ApiClient {
       if (res && res.message) return res.message
     } catch {}
     return null
+  }
+
+  /**
+   * Structured financial statement built server-side from REAL records.
+   * kind: income_statement | balance_sheet | cashflow_statement |
+   *       cost_tracking | loan_schedule | project_pipeline
+   * Returns { id, title, columns:[{key,header,kind,emphasise?}], rows:[{kind,label,values?,...}] }
+   * so the frontend renders exactly what the backend sends (no hardcoded lines).
+   */
+  async getFinancialStatement(kind, { property = null, year = null, months = 12 } = {}) {
+    const params = new URLSearchParams({ kind })
+    if (property) params.append('property', property)
+    if (year) params.append('year', String(year))
+    if (months) params.append('months', String(months))
+    const res = await this.request(`/method/property_management.api.reports.financial_statement?${params.toString()}`)
+    const data = res && res.message ? res.message : null
+    return data && data.rows ? data : null
   }
 
   // --- ACCOUNTING (native, GL-backed) ---
@@ -1529,36 +1560,49 @@ class ApiClient {
     return res?.message || null
   }
 
-  // --- TENANT COMPLAINTS (self-service) ---
-  /** The logged-in tenant's own complaints. */
-  async getMyComplaints() {
+  // --- TENANT FEEDBACK (self-service) ---
+  /** The logged-in tenant's own feedback. */
+  async getMyFeedback() {
     const res = await this.request('/method/property_management.api.tenant.my_complaints')
     return Array.isArray(res?.message) ? res.message : []
   }
 
-  /** Raise a complaint as the logged-in tenant. */
-  async raiseComplaint({ subject, description, category = 'General', priority = 'Medium', photo = null } = {}) {
+  /** Alias for backward compatibility */
+  async getMyComplaints() {
+    return this.getMyFeedback()
+  }
+
+  /** Raise feedback as the logged-in tenant. */
+  async raiseFeedback({ feedback, category = 'General', priority = 'Medium', photo = null } = {}) {
     const res = await this.request('/method/property_management.api.tenant.raise_complaint', {
       method: 'POST',
-      body: JSON.stringify({ subject, description, category, priority, photo }),
+      body: JSON.stringify({ feedback, category, priority, photo }),
     })
     return res?.message || null
   }
 
-  // --- COMPLAINTS (admin/caretaker view) — API v2, envelope ---
-  async getComplaints({ property = null, tenant = null, status = null, category = null, search = null, page = 1, pageSize = 8 } = {}) {
+  /** Alias for backward compatibility */
+  async raiseComplaint({ subject, description, category = 'General', priority = 'Medium', photo = null } = {}) {
+    // Convert old format to new
+    const feedback = description ? `${subject}\n\n${description}` : subject
+    return this.raiseFeedback({ feedback, category, priority, photo })
+  }
+
+  // --- FEEDBACK (admin/caretaker view) — API v2, envelope ---
+  async getFeedback({ property = null, tenant = null, caretaker = null, raisedBy = null, status = null, category = null, search = null, page = 1, pageSize = 8 } = {}) {
     const qs = new URLSearchParams()
     if (property) qs.append('property', property)
     if (tenant) qs.append('tenant', tenant)
+    if (caretaker) qs.append('caretaker', caretaker)
+    if (raisedBy) qs.append('raised_by', raisedBy)
     if (status) qs.append('status', status)
     if (category) qs.append('category', category)
     if (search) qs.append('search', search)
     qs.append('page', String(page))
     qs.append('page_size', String(pageSize))
     
-    const result = await this.v2(`complaints.list_complaints?${qs.toString()}`)
+    const result = await this.v2(`feedback.list_feedback?${qs.toString()}`)
     
-    // Handle new paginated response format
     if (result && result.data && result.pagination) {
       return {
         data: result.data,
@@ -1573,28 +1617,68 @@ class ApiClient {
       }
     }
     
-    // Backward compatibility with old array response
     return { data: Array.isArray(result) ? result : [], pagination: null }
   }
 
-  async getComplaintStats({ property = null, tenant = null } = {}) {
+  /** Alias for backward compatibility */
+  async getComplaints(params = {}) {
+    return this.getFeedback(params)
+  }
+
+  async getFeedbackStats({ property = null, tenant = null, caretaker = null, raisedBy = null } = {}) {
     const qs = new URLSearchParams()
     if (property) qs.append('property', property)
     if (tenant) qs.append('tenant', tenant)
-    return await this.v2(`complaints.complaint_stats?${qs.toString()}`)
+    if (caretaker) qs.append('caretaker', caretaker)
+    if (raisedBy) qs.append('raised_by', raisedBy)
+    return await this.v2(`feedback.feedback_stats?${qs.toString()}`)
   }
 
-  /** Tenants for the admin complaint filter (optionally scoped to a property). */
-  async getComplaintTenants({ property = null } = {}) {
+  /** Alias for backward compatibility */
+  async getComplaintStats(params = {}) {
+    return this.getFeedbackStats(params)
+  }
+
+  /** Tenants for the admin feedback filter (optionally scoped to a property). */
+  async getFeedbackTenants({ property = null } = {}) {
     const qs = new URLSearchParams()
     if (property) qs.append('property', property)
-    const data = await this.v2(`complaints.tenant_options?${qs.toString()}`)
+    const data = await this.v2(`feedback.tenant_options?${qs.toString()}`)
     return Array.isArray(data) ? data : []
   }
 
-  /** Admin/caretaker: respond to and/or update the status of a complaint. */
-  async respondComplaint(name, { response = null, status = null } = {}) {
-    return await this.v2('complaints.respond_complaint', { name, response, status })
+  /** Alias for backward compatibility */
+  async getComplaintTenants(params = {}) {
+    return this.getFeedbackTenants(params)
+  }
+
+  /** Caretakers for the admin feedback filter (optionally scoped to a property). */
+  async getFeedbackCaretakers({ property = null } = {}) {
+    const qs = new URLSearchParams()
+    if (property) qs.append('property', property)
+    const data = await this.v2(`feedback.caretaker_options?${qs.toString()}`)
+    return Array.isArray(data) ? data : []
+  }
+
+  /** Admin/caretaker: respond to and/or update the status of feedback. */
+  async respondFeedback(name, { response = null, status = null } = {}) {
+    return await this.v2('feedback.respond_feedback', { name, response, status })
+  }
+
+  /** Alias for backward compatibility */
+  async respondComplaint(name, params = {}) {
+    return this.respondFeedback(name, params)
+  }
+
+  /** Caretaker raises feedback. */
+  async caretakerRaiseFeedback({ feedback, property = null, unit = null, tenant = null, category = 'General', priority = 'Medium', photo = null } = {}) {
+    return await this.v2('feedback.raise_feedback', { feedback, property, unit, tenant, category, priority, photo })
+  }
+
+  /** Get feedback visible to the logged-in caretaker (their own + tenant feedback on their properties). */
+  async getCaretakerFeedback() {
+    const data = await this.v2('feedback.my_feedback')
+    return Array.isArray(data) ? data : []
   }
 
   /** Download the tenant's own lease PDF (server verifies ownership). */
@@ -1717,6 +1801,11 @@ class ApiClient {
         description: e.work_description || '',
         date: e.approved_at || e.creation || '',
         status: e.status || 'Draft',
+        scope: e.expense_scope || 'Property',
+        unit: e.unit || null,
+        deductFromDeposit: !!e.deduct_from_deposit,
+        depositDeducted: e.deposit_deducted || 0,
+        depositShortfall: e.deposit_shortfall || 0,
       }))
       return {
         data,
@@ -1868,6 +1957,9 @@ class ApiClient {
       property: payload.property || null,
       organization: payload.organization || null,
       mpesa_phone: payload.mpesa_phone || payload.phone || null,
+      // Per-staff toggle: when false, payroll deducts nothing (net = gross).
+      // Defaults to true so existing callers keep applying statutory deductions.
+      apply_deductions: payload.apply_deductions !== undefined ? payload.apply_deductions : true,
     }
     // HRMS-backed: creates Employee + Salary Structure Assignment (payroll enrolled).
     // This is the only supported write path; the old /resource/Employee write used
@@ -1890,6 +1982,8 @@ class ApiClient {
       bonus_deposit: r.bonus_deposit ?? r.bonusDeposit ?? null,
       mpesa_phone: r.phone || r.mpesa_phone || null,
       property: r.property || null,
+      // Default to applying deductions unless the row explicitly opts out.
+      apply_deductions: r.apply_deductions ?? r.applyDeductions ?? true,
     }))
     return await this.v2('payroll.bulk_create_employees', { employees })
   }
@@ -2193,11 +2287,12 @@ class ApiClient {
   }
 
   /** Unified invoice register (Sales + Purchase) with pagination for the admin Invoices page. */
-  async getAllInvoices({ kind = null, status = null, search = null, page = 1, pageSize = 8 } = {}) {
+  async getAllInvoices({ kind = null, status = null, search = null, page = 1, pageSize = 8, property = null } = {}) {
     const qs = new URLSearchParams()
     if (kind) qs.append('kind', kind)
     if (status) qs.append('status', status)
     if (search) qs.append('search', search)
+    if (property) qs.append('property', property)
     qs.append('page', String(page))
     qs.append('page_size', String(pageSize))
     
@@ -2259,8 +2354,11 @@ class ApiClient {
 
   // --- APPROVALS (maker-checker inbox) ---
   // These endpoints return { status, ... } directly in `message` (not the v2 envelope).
-  async getPendingApprovals() {
-    const res = await this.request('/method/property_management.api.approvals.get_pending_approvals')
+  async getPendingApprovals({ property = null } = {}) {
+    const qs = new URLSearchParams()
+    if (property) qs.append('property', property)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    const res = await this.request(`/method/property_management.api.approvals.get_pending_approvals${suffix}`)
     const list = res && res.message ? res.message : res
     return Array.isArray(list)
       ? list.map((r) => ({
@@ -2270,6 +2368,8 @@ class ApiClient {
           reference: r.reference_name,
           requestedBy: r.requested_by,
           organization: r.organization || '',
+          property: r.property || '',
+          propertyName: r.property_name || '',
           comment: r.comment || '',
           date: r.creation || '',
         }))
@@ -2305,6 +2405,12 @@ class ApiClient {
       vendor_phone: payload.vendor_phone || payload.vendorPhone || null,
       amount: Number(payload.amount || 0),
       work_description: payload.description || payload.work_description || '',
+      // Scope: 'Property' (whole property) or 'Unit / Tenant'. When Unit/Tenant,
+      // `unit` attaches the expense to a unit and `deduct_from_deposit` funds the
+      // repair from that unit tenant's deposit on approval.
+      expense_scope: payload.expense_scope || (payload.unit ? 'Unit / Tenant' : 'Property'),
+      unit: payload.unit || null,
+      deduct_from_deposit: payload.deduct_from_deposit ? 1 : 0,
     })
   }
 

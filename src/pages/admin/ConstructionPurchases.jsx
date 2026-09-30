@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Package, Clock, CheckCircle2, Check, X, Building } from 'lucide-react'
+import { Plus, Package, Clock, CheckCircle2, Check, X, Building, Eye } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
 import Card from '../../components/ui/Card'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
+import Modal from '../../components/ui/Modal'
 import FormModal from '../../components/patterns/FormModal'
 import { Field, TextInput, TextArea, Select } from '../../components/ui/Field'
 import { StatCardsSkeleton } from '../../components/ui/Skeleton'
@@ -25,6 +26,7 @@ export default function ConstructionPurchases() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(null)
   const [open, setOpen] = useState(false)
+  const [viewRow, setViewRow] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -164,31 +166,26 @@ export default function ConstructionPurchases() {
           loading={loading}
           columns={[
             { key: 'projectName', header: 'Project' },
-            { key: 'description', header: 'Item', render: (r) => (
-              <div>
-                <p className="font-medium text-slate-800">{r.description}</p>
-                {r.category && <p className="text-xs text-slate-400">{r.category}</p>}
-              </div>
-            ) },
             { key: 'vendorName', header: 'Supplier', render: (r) => r.vendorName || '—' },
             { key: 'amount', header: 'Amount', render: (r) => formatKsh(r.amount) },
             { key: 'date', header: 'Date' },
             { key: 'status', header: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-            { key: 'actions', header: '', render: (r) => (
-              r.status === 'Pending Approval' ? (
-                <div className="flex items-center gap-1.5">
-                  <Button size="sm" icon={Check} onClick={() => handleApprove(r)} {...(busy === r.id ? { disabled: true } : {})}>
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="danger" icon={X} onClick={() => handleReject(r)} {...(busy === r.id ? { disabled: true } : {})}>
-                    Reject
-                  </Button>
-                </div>
-              ) : (
-                r.purchaseInvoice
-                  ? <span className="text-xs text-slate-400">PI: {r.purchaseInvoice}</span>
-                  : <span className="text-xs text-slate-300">—</span>
-              )
+            { key: 'actions', header: '', truncate: false, render: (r) => (
+              <div className="flex items-center justify-end gap-1.5">
+                <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewRow(r)}>
+                  View more
+                </Button>
+                {r.status === 'Pending Approval' && (
+                  <>
+                    <Button size="sm" icon={Check} onClick={() => handleApprove(r)} {...(busy === r.id ? { disabled: true } : {})}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="danger" icon={X} onClick={() => handleReject(r)} {...(busy === r.id ? { disabled: true } : {})}>
+                      Reject
+                    </Button>
+                  </>
+                )}
+              </div>
             ) },
           ]}
           rows={rows}
@@ -238,6 +235,71 @@ export default function ConstructionPurchases() {
           Paying workers? Choose <span className="font-medium text-slate-500">Labour / Wages</span> and set the supplier to the worker or labour crew.
         </p>
       </FormModal>
+
+      <Modal
+        open={!!viewRow}
+        onClose={() => setViewRow(null)}
+        title="Purchase Details"
+        description={viewRow?.projectName ? `Project: ${viewRow.projectName}` : undefined}
+        size="md"
+      >
+        {viewRow && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Item Description</p>
+              <p className="text-sm text-slate-800 whitespace-pre-wrap break-words">{viewRow.description || '—'}</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Category</p>
+                <p className="text-sm text-slate-800">{viewRow.category || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Supplier</p>
+                <p className="text-sm text-slate-800">{viewRow.vendorName || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Amount</p>
+                <p className="text-sm font-semibold text-slate-900">{formatKsh(viewRow.amount)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Date</p>
+                <p className="text-sm text-slate-800">{viewRow.date || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Status</p>
+                <Badge tone={statusTone(viewRow.status)}>{viewRow.status}</Badge>
+              </div>
+              {viewRow.purchaseInvoice && (
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Purchase Invoice</p>
+                  <p className="text-sm text-slate-800">{viewRow.purchaseInvoice}</p>
+                </div>
+              )}
+            </div>
+
+            {viewRow.status === 'Pending Approval' && (
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                <Button
+                  icon={Check}
+                  onClick={() => { handleApprove(viewRow); setViewRow(null) }}
+                  {...(busy === viewRow.id ? { disabled: true } : {})}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="danger"
+                  icon={X}
+                  onClick={() => { handleReject(viewRow); setViewRow(null) }}
+                  {...(busy === viewRow.id ? { disabled: true } : {})}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </>
   )
 }

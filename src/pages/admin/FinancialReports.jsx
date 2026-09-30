@@ -5,7 +5,7 @@ import {
 import {
   Download, Wallet, TrendingUp, Receipt, PiggyBank,
   FileText, Calendar, Building, Printer, CheckCircle2,
-  AlertTriangle, Users, ArrowUpRight, ArrowDownRight, RefreshCw, Layers
+  AlertTriangle, Users, RefreshCw, Layers
 } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
@@ -18,16 +18,29 @@ import { FileSpreadsheet } from 'lucide-react'
 import { Select } from '../../components/ui/Field'
 import { api } from '../../api/client'
 import { useToast } from '../../context/ToastContext'
-import { exportToExcel, exportToPdf } from '../../api/exportReport'
+import { exportToExcel, exportToPdf, exportStatementToPdf, exportStatementToExcel } from '../../api/exportReport'
+import StatementTable from '../../components/patterns/StatementTable'
+import { STATEMENT_BUILDERS, mapStatementValues } from '../../api/statementReports'
 
 const REPORT_TABS = [
   { id: 'overview', label: 'Executive Overview', icon: TrendingUp },
+  { id: 'income_statement', label: 'Income Statement', icon: PiggyBank },
+  { id: 'balance_sheet', label: 'Balance Sheet', icon: Layers },
+  { id: 'cashflow_statement', label: 'Cashflow', icon: TrendingUp },
+  { id: 'cost_tracking', label: 'Cost Tracking', icon: Receipt },
+  { id: 'loan_schedule', label: 'Loan Schedule', icon: Wallet },
+  { id: 'project_pipeline', label: 'Project Pipeline', icon: Building },
   { id: 'collections', label: 'Rent Collections', icon: Wallet },
-  { id: 'pnl', label: 'Profit & Loss (P&L)', icon: PiggyBank },
   { id: 'arrears', label: 'Arrears & Aging', icon: AlertTriangle },
   { id: 'remittances', label: 'Landlord Remittances', icon: Users },
   { id: 'expenses', label: 'Operating Expenses', icon: Receipt },
 ]
+
+// The 6 statement tabs that render the client's exact accounting workbook format.
+const STATEMENT_TABS = new Set([
+  'income_statement', 'balance_sheet', 'cashflow_statement',
+  'cost_tracking', 'loan_schedule', 'project_pipeline',
+])
 
 export const formatKsh = (amount) => {
   return `KSh ${Number(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -103,6 +116,9 @@ export default function FinancialReports() {
   const [expensesData, setExpensesData] = useState([])
   const [paymentsData, setPaymentsData] = useState([])
   const [agingBuckets, setAgingBuckets] = useState(null)
+  const [balanceSheet, setBalanceSheet] = useState(null)
+  const [statement, setStatement] = useState(null)
+  const [statementLoading, setStatementLoading] = useState(false)
   const [ageFilter, setAgeFilter] = useState('all')
   const [branding, setBranding] = useState({ company_name: 'NEST@R', logo: null, property_name: null })
 
@@ -116,10 +132,25 @@ export default function FinancialReports() {
     return () => { mounted = false }
   }, [propertyFilter, timeRange])
 
+  // Load the backend-built statement structure for the active statement tab.
+  // The line items come entirely from the backend (real records) — nothing is
+  // hardcoded on the frontend anymore.
+  useEffect(() => {
+    if (!STATEMENT_TABS.has(activeTab)) { setStatement(null); return }
+    let mounted = true
+    setStatementLoading(true)
+    setStatement(null)
+    api.getFinancialStatement(activeTab, { property: propertyFilter || null })
+      .then((res) => { if (mounted) setStatement(res) })
+      .catch(() => { if (mounted) setStatement(null) })
+      .finally(() => { if (mounted) setStatementLoading(false) })
+    return () => { mounted = false }
+  }, [activeTab, propertyFilter])
+
   const loadLiveReports = async () => {
     setLoading(true)
     try {
-      const [colRes, pnlRes, remRes, arrRes, expRes, payRes, trendRes] = await Promise.allSettled([
+      const [colRes, pnlRes, remRes, arrRes, expRes, payRes, trendRes, bsRes] = await Promise.allSettled([
         api.getRentCollectionReport(propertyFilter),
         api.getProfitAndLoss(propertyFilter),
         api.getLandlordRemittances(propertyFilter),
@@ -127,6 +158,7 @@ export default function FinancialReports() {
         api.getExpenseReport(propertyFilter),
         api.getPayments(),
         api.getRevenueAndExpenseTrend(propertyFilter),
+        api.getBalanceSheet({ property: propertyFilter || null }),
       ])
 
       if (colRes.status === 'fulfilled' && colRes.value) setCollectionData(colRes.value)
@@ -148,6 +180,7 @@ export default function FinancialReports() {
       if (expRes.status === 'fulfilled' && expRes.value) setExpensesData(expRes.value.expense_records || [])
       if (payRes.status === 'fulfilled' && payRes.value) setPaymentsData(payRes.value)
       if (trendRes.status === 'fulfilled' && trendRes.value) setTrendData(trendRes.value)
+      if (bsRes.status === 'fulfilled' && bsRes.value) setBalanceSheet(bsRes.value)
 
       api.getReportBranding(propertyFilter || null).then((b) => { if (b) setBranding(b) }).catch(() => {})
     } catch (err) {
@@ -189,24 +222,6 @@ export default function FinancialReports() {
               status: '' },
           ],
         }
-      case 'pnl': {
-        const rows = [
-          ...(pnlData?.income_breakdown || []).map((i) => ({ section: 'Revenue', account: i.account_name || i.account, amount: i.balance })),
-          ...(pnlData?.expense_breakdown || []).map((e) => ({ section: 'Expense', account: e.account_name || e.account, amount: e.balance })),
-          { section: 'Summary', account: 'Total Revenue', amount: pnlData?.total_income ?? totalCollected },
-          { section: 'Summary', account: 'Total Expenses', amount: pnlData?.total_expenses ?? totalExpenses },
-          { section: 'Summary', account: 'Net Operating Income (NOI)', amount: pnlData?.net_profit ?? netIncome },
-        ]
-        return {
-          title: 'Profit & Loss Statement', subtitle: propLabel, meta,
-          columns: [
-            { key: 'section', header: 'Section' },
-            { key: 'account', header: 'Account' },
-            { key: 'amount', header: 'Amount', value: (r) => formatKsh(r.amount) },
-          ],
-          rows,
-        }
-      }
       case 'arrears':
         return {
           title: 'Rent Arrears & Aging', subtitle: propLabel, meta,
@@ -259,7 +274,29 @@ export default function FinancialReports() {
     }
   }
 
+  // Build the statement model for the current statement tab.
+  // Prefer the backend-built structure (real records, self-describing rows with
+  // their own values). Fall back to the local model only if the backend is
+  // unavailable, so the format still renders.
+  const buildStatement = () => {
+    if (statement && statement.rows) {
+      return { model: statement, values: {} }
+    }
+    const builder = STATEMENT_BUILDERS[activeTab]
+    if (!builder) return null
+    const model = builder()
+    const values = mapStatementValues(activeTab, { pnlData, expensesData, trendData, balanceSheet })
+    return { model, values }
+  }
+
   const handleExportPdf = () => {
+    if (STATEMENT_TABS.has(activeTab)) {
+      const s = buildStatement()
+      if (!s) return
+      exportStatementToPdf({ ...s, branding })
+      showToast('Opening print-ready statement PDF…')
+      return
+    }
     const payload = buildExportPayload()
     if (!payload.rows.length) { showToast('No data to export for this report.'); return }
     exportToPdf({ ...payload, branding })
@@ -267,6 +304,13 @@ export default function FinancialReports() {
   }
 
   const handleExportExcel = () => {
+    if (STATEMENT_TABS.has(activeTab)) {
+      const s = buildStatement()
+      if (!s) return
+      exportStatementToExcel({ ...s, filename: activeTab, branding })
+      showToast('Exporting statement to Excel…')
+      return
+    }
     const payload = buildExportPayload()
     if (!payload.rows.length) { showToast('No data to export for this report.'); return }
     exportToExcel({ ...payload, filename: activeTab, branding })
@@ -384,6 +428,31 @@ export default function FinancialReports() {
         <StatCard label="Net Operating Income" value={formatKsh(netIncome)} icon={PiggyBank} tone="blue" />
         <StatCard label="Landlord Payouts" value={formatKsh(totalRemittances)} icon={Users} tone="brand" />
       </div>
+      )}
+
+      {/* ACCOUNTING STATEMENTS (exact workbook format, backend-sourced line items) */}
+      {STATEMENT_TABS.has(activeTab) && (
+        (loading || statementLoading) ? (
+          <TableCardSkeleton columns={8} rows={12} />
+        ) : (
+          <Card padded={false} className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-slate-900">{branding.company_name || 'NEST@R'}</h3>
+                <p className="text-xs text-slate-500">
+                  {propertyFilter
+                    ? (properties.find((p) => p.id === propertyFilter)?.name || propertyFilter)
+                    : 'All Properties'} • Live figures mapped from the general ledger where available.
+                </p>
+              </div>
+              <Badge tone="brand">Statement Format</Badge>
+            </div>
+            {(() => {
+              const s = buildStatement()
+              return s ? <StatementTable model={s.model} values={s.values} /> : null
+            })()}
+          </Card>
+        )
       )}
 
       {/* 1. EXECUTIVE OVERVIEW */}
@@ -545,99 +614,7 @@ export default function FinancialReports() {
         </Card>
       )}
 
-      {/* 3. PROFIT & LOSS */}
-      {activeTab === 'pnl' && loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <PanelSkeleton className="lg:col-span-2" rows={7} />
-          <ChartCardSkeleton />
-        </div>
-      )}
-      {activeTab === 'pnl' && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <Card className="lg:col-span-2 p-5">
-            <h3 className="font-semibold text-slate-900 mb-1">Profit & Loss Statement (Operating Position)</h3>
-            <p className="text-xs text-slate-500 mb-6">Audited from posted general ledger transactions and invoice payments.</p>
-
-            <div className="space-y-6">
-              {/* Income */}
-              <div>
-                <div className="flex items-center justify-between text-sm font-bold text-slate-900 pb-2 border-b-2 border-emerald-500">
-                  <span className="flex items-center gap-2"><ArrowUpRight className="w-4 h-4 text-emerald-600" /> OPERATING REVENUE</span>
-                  <span className="text-emerald-700">{formatKsh(pnlData?.total_income ?? totalCollected)}</span>
-                </div>
-                <div className="divide-y divide-slate-100 text-xs text-slate-600">
-                  {(pnlData?.income_breakdown || []).length > 0 ? (
-                    pnlData.income_breakdown.map((i, idx) => (
-                      <div key={idx} className="flex justify-between py-2 pl-4">
-                        <span>{i.account_name || i.account}</span>
-                        <span className="font-mono">{formatKsh(i.balance)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="flex justify-between py-2 pl-4"><span>Rent Collections (Recognised in GL)</span><span>{formatKsh(totalCollected)}</span></div>
-                  )}
-                </div>
-              </div>
-
-              {/* Expenses */}
-              <div>
-                <div className="flex items-center justify-between text-sm font-bold text-slate-900 pb-2 border-b-2 border-rose-500">
-                  <span className="flex items-center gap-2"><ArrowDownRight className="w-4 h-4 text-rose-600" /> OPERATING EXPENSES</span>
-                  <span className="text-rose-700">{formatKsh(totalExpenses)}</span>
-                </div>
-                <div className="divide-y divide-slate-100 text-xs text-slate-600">
-                  {(pnlData?.expense_breakdown || []).length > 0 ? (
-                    pnlData.expense_breakdown.map((e, idx) => (
-                      <div key={idx} className="flex justify-between py-2 pl-4">
-                        <span>{e.account_name || e.account}</span>
-                        <span className="font-mono">{formatKsh(e.balance)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="py-3 text-center text-slate-400">No posted operating expenses recorded.</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Net Position */}
-              <div className="p-4 bg-slate-900 text-white rounded-xl flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">NET OPERATING INCOME (NOI)</p>
-                  <p className="text-xl font-bold text-emerald-400">{formatKsh(netIncome)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400">Profit Margin</p>
-                  <p className="text-base font-bold text-white">
-                    {(pnlData?.total_income ?? totalCollected) > 0 ? `${((netIncome / (pnlData?.total_income ?? totalCollected)) * 100).toFixed(1)}%` : '0%'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-5 flex flex-col justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-900 mb-2">Monthly Comparison</h3>
-              <p className="text-xs text-slate-500 mb-4">Actual revenue vs expense distribution</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `${v / 1000}k`} />
-                  <Tooltip formatter={(v) => formatKsh(v)} />
-                  <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} name="Collections" />
-                  <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} name="Expenses" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <Button className="w-full" icon={Download} onClick={handleExportPdf}>
-                Download Signed P&L PDF
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Profit & Loss removed — the Income Statement tab is the P&L, in the workbook format. */}
 
       {/* 4. ARREARS & AGING */}
       {activeTab === 'arrears' && loading && (

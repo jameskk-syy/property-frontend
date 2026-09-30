@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { CheckCircle2, Wallet, AlertCircle, Clock } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { Field, TextInput, Select } from '../../components/ui/Field'
@@ -18,12 +19,13 @@ export default function PaymentReconciliation() {
   const [loading, setLoading] = useState(true)
   const [matchFor, setMatchFor] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [form, setForm] = useState({ property: '', tenant: '', amount: '' })
 
-  const load = () => {
+  const load = (property = propertyFilter) => {
     setLoading(true)
     Promise.all([
-      api.listUnreconciled().catch(() => []),
+      api.listUnreconciled({ property: property || null }).catch(() => []),
       api.getPayments().catch(() => []),
     ]).then(([unrec, pays]) => {
       setRows(Array.isArray(unrec) ? unrec : [])
@@ -32,7 +34,11 @@ export default function PaymentReconciliation() {
   }
 
   useEffect(() => {
-    load()
+    load(propertyFilter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyFilter])
+
+  useEffect(() => {
     api.getProperties().then((res) => { if (res) setProperties(res) }).catch(() => {})
     api.getTenants({ pageSize: 100 }).then((res) => { 
       if (res && res.data) setTenants(res.data)
@@ -77,6 +83,7 @@ export default function PaymentReconciliation() {
       <ListPageTemplate
         title="Payment Reconciliation"
         description="Match incoming M-Pesa and bank payments against tenant invoices."
+        actions={<PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />}
         loading={loading}
         stats={[
           { label: 'Unreconciled Value', value: formatKsh(total), icon: Wallet, tone: 'orange' },

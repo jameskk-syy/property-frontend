@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, Wallet, Send, Clock } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import ReminderDialog from '../../components/patterns/ReminderDialog'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
@@ -16,16 +17,22 @@ export default function ArrearsManagement() {
   const [loading, setLoading] = useState(true)
   const [reminderFor, setReminderFor] = useState(null)
   const [sending, setSending] = useState(false)
+  const [propertyFilter, setPropertyFilter] = useState('')
 
   useEffect(() => {
     let mounted = true
-    api.getArrears().then((res) => {
-      if (mounted && res && res.length > 0) setArrears(res)
+    setLoading(true)
+    api.getArrears(propertyFilter || undefined).then((res) => {
+      if (!mounted) return
+      // When filtering by property, show exactly what the server returns (even if
+      // empty). Only fall back to sample data on the unfiltered initial view.
+      if (propertyFilter) setArrears(Array.isArray(res) ? res : [])
+      else if (res && res.length > 0) setArrears(res)
     }).catch(() => {}).finally(() => {
       if (mounted) setLoading(false)
     })
     return () => { mounted = false }
-  }, [])
+  }, [propertyFilter])
 
   const total = arrears.reduce((s, a) => s + (a.amount || 0), 0)
   const critical = arrears.filter((a) => (a.daysOverdue || 0) > 30)
@@ -79,6 +86,7 @@ export default function ArrearsManagement() {
         title="Arrears & Defaulter Tracking"
         description="Follow up on overdue balances before they escalate."
         loading={loading}
+        actions={<PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />}
         stats={[
           { label: 'Tenants in Arrears', value: arrears.length, icon: AlertTriangle, tone: 'red' },
           { label: 'Total Outstanding', value: formatKsh(total), icon: Wallet, tone: 'orange' },

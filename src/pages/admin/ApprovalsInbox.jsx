@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle2, XCircle, ClipboardCheck, Clock, RefreshCw } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
@@ -11,16 +12,17 @@ export default function ApprovalsInbox() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState(null)
+  const [propertyFilter, setPropertyFilter] = useState('')
 
-  const load = useCallback(() => {
+  const load = useCallback((property = propertyFilter) => {
     setLoading(true)
-    api.getPendingApprovals()
+    api.getPendingApprovals({ property: property || null })
       .then((res) => setRequests(res || []))
       .catch((err) => showToast(err?.message || 'Could not load approvals.'))
       .finally(() => setLoading(false))
-  }, [showToast])
+  }, [showToast, propertyFilter])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(propertyFilter) }, [propertyFilter, load])
 
   const act = async (id, kind) => {
     setBusyId(id)
@@ -48,9 +50,12 @@ export default function ApprovalsInbox() {
       description="Maker-checker queue. Approving an expense posts it to the accounts. You cannot approve a request you raised yourself."
       loading={loading}
       actions={
-        <Button variant="ghost" icon={RefreshCw} onClick={load} className={loading ? 'animate-spin' : ''}>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />
+          <Button variant="ghost" icon={RefreshCw} onClick={() => load()} className={loading ? 'animate-spin' : ''}>
+            Refresh
+          </Button>
+        </div>
       }
       stats={[
         { label: 'Pending', value: requests.length, icon: Clock, tone: 'orange' },
@@ -59,6 +64,7 @@ export default function ApprovalsInbox() {
       columns={[
         { key: 'type', header: 'Type', render: (r) => <Badge>{r.type}</Badge> },
         { key: 'reference', header: 'Reference', render: (r) => `${r.doctype} · ${r.reference}` },
+        { key: 'property', header: 'Property', render: (r) => r.propertyName || r.property || '—' },
         { key: 'requestedBy', header: 'Requested By' },
         { key: 'organization', header: 'Organization', render: (r) => r.organization || '—' },
         { key: 'comment', header: 'Note', render: (r) => r.comment || '—' },

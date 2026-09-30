@@ -5,6 +5,8 @@
 // file from the rows already rendered on screen, so export always works even
 // when the ERPNext PDF endpoint is unavailable.
 
+import { fmtAccounting, cellFor } from './statementReports'
+
 const brand = '#14b98a'
 
 /** Escape a value for safe inclusion in HTML. */
@@ -133,4 +135,179 @@ export function exportToPdf({ title, subtitle, columns, rows, meta = [], brandin
   <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>
 </body></html>`)
   win.document.close()
+}
+
+
+// ============================================================================
+// STATEMENT EXPORTS — render the accounting workbook format (Income Statement,
+// Balance Sheet, Cashflow, Cost Tracking, Loan Schedule, Project Pipeline).
+//
+// These consume the SAME statement model used on screen (src/api/statementReports.js
+// + StatementTable.jsx), so the PDF/Excel output matches the UI exactly:
+// bold section headers, indented items, sub-total/total rules, shaded totals,
+// negatives in (parentheses), and month columns.
+// ============================================================================
+
+/** Build the <tr> rows for a statement model as an HTML string. */
+function statementRowsHtml(model, values, { forExcel = false } = {}) {
+  const { columns, rows } = model
+  const colCount = columns.length
+
+  const cellText = (r, col) => {
+    if (col.kind === 'label') return esc(r.label)
+    if (col.kind === 'text') {
+      const v = r[col.key]
+      return v === undefined || v === null ? '' : esc(v)
+    }
+    if (r.kind === 'section') return ''
+    // Backend-shaped rows carry their own per-column values map (same as the
+    // on-screen StatementTable). Prefer that; fall back to the legacy values map.
+    if (r.values && Object.prototype.hasOwnProperty.call(r.values, col.key)) {
+      return esc(fmtAccounting(r.values[col.key]))
+    }
+    if (r.values) return esc(fmtAccounting(null)) // known row, no value here -> dash
+    return esc(fmtAccounting(cellFor(r.key, col.key, values)))
+  }
+
+  return rows
+    .map((r) => {
+      if (r.kind === 'spacer') {
+        return `<tr class="spacer"><td colspan="${colCount}">&nbsp;</td></tr>`
+      }
+      const cls = ['row', r.kind].join(' ')
+      const tds = columns
+        .map((col) => {
+          const align = col.kind === 'label' ? 'left' : 'right'
+          const txt = cellText(r, col)
+          const negative = typeof txt === 'string' && txt.startsWith('(')
+          const classes = [
+            `a-${align}`,
+            r.kind === 'item' && col.kind === 'label' ? 'indent' : '',
+            negative && !forExcel ? 'neg' : '',
+            col.emphasise ? 'emph' : '',
+          ].join(' ')
+          return `<td class="${classes}">${txt}</td>`
+        })
+        .join('')
+      return `<tr class="${cls}">${tds}</tr>`
+    })
+    .join('')
+}
+
+/** Header row (column titles) if the model defines any. */
+function statementHeadHtml(model) {
+  const hasHeaders = model.columns.some((c) => c.header)
+  if (!hasHeaders) return ''
+  const ths = model.columns
+    .map((c) => `<th class="a-${c.kind === 'label' ? 'left' : 'right'}">${esc(c.header)}</th>`)
+    .join('')
+  return `<thead><tr>${ths}</tr></thead>`
+}
+
+const STATEMENT_CSS = `
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; color: #0f172a; margin: 28px; }
+  .brandbar { display:flex; align-items:center; gap:12px; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
+  .company { font-size: 16px; font-weight: 700; margin: 0; }
+  .scope { font-size: 11px; color: #475569; margin: 2px 0 0; }
+  .stmt-title { font-size: 13px; font-weight: 700; margin: 4px 0 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { font-size: 11px; padding: 3px 8px; }
+  thead th { border-bottom: 1px solid #334155; font-weight: 700; }
+  .a-left { text-align: left; }
+  .a-right { text-align: right; font-variant-numeric: tabular-nums; }
+  .indent { padding-left: 20px; }
+  .row.section td { font-weight: 700; }
+  .row.subtotal td, .row.total td { font-weight: 700; border-top: 1px solid #64748b; }
+  .row.total td { background: #f1f5f9; }
+  .row.grand td { font-weight: 700; border-top: 2px solid #0f172a; background: #ecfdf5; }
+  .emph { font-weight: 700; }
+  .neg { color: #dc2626; }
+  .spacer td { height: 8px; border: none; }
+  .foot { margin-top: 22px; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+  @media print { body { margin: 12mm; } }
+`
+
+/**
+ * Export a statement to PDF (opens a print-ready window). Matches the UI layout.
+ * @param {{ model: object, values: object, branding?: object }} args
+ */
+export function exportStatementToPdf({ model, values = {}, branding = {} }) {
+  if (!model) return
+  const win = window.open('', '_blank')
+  if (!win) return
+
+  const company = branding.company_name || 'NEST@R'
+  const propertyName = branding.property_name || null
+  const logoUrl = branding.logo || null
+  const logoHtml = logoUrl
+    ? `<img src="${esc(logoUrl)}" alt="logo" style="height:44px;width:auto;object-fit:contain;" />`
+    : ''
+
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
+<title>${esc(model.title)}</title>
+<style>${STATEMENT_CSS}</style></head>
+<body>
+  <div class="brandbar">
+    ${logoHtml}
+    <div>
+      <p class="company">${esc(company)}</p>
+      <p class="scope">${propertyName ? 'Property: ' + esc(propertyName) : 'All Properties'} • Generated ${esc(new Date().toLocaleString('en-KE'))}</p>
+    </div>
+  </div>
+  <div class="stmt-title">${esc(model.title)}</div>
+  <table>
+    ${statementHeadHtml(model)}
+    <tbody>${statementRowsHtml(model, values)}</tbody>
+  </table>
+  <p class="foot">${esc(company)} • Nest Property Management System</p>
+  <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+</body></html>`)
+  win.document.close()
+}
+
+/**
+ * Export a statement to Excel (.xls via the HTML-table trick). Same structure
+ * as the PDF, so the workbook mirrors the on-screen statement.
+ * @param {{ model: object, values: object, filename?: string, branding?: object }} args
+ */
+export function exportStatementToExcel({ model, values = {}, filename, branding = {} }) {
+  if (!model) return
+  const company = branding.company_name || 'NEST@R'
+  const propertyName = branding.property_name || null
+
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8" />
+<style>
+  table { border-collapse: collapse; }
+  th, td { font-family: Calibri, Arial, sans-serif; font-size: 11px; padding: 3px 8px; }
+  thead th { font-weight: bold; border-bottom: 1px solid #334155; }
+  .a-left { text-align: left; mso-number-format:'\\@'; }
+  .a-right { text-align: right; }
+  .indent { padding-left: 20px; }
+  .row.section td, .row.subtotal td, .row.total td, .row.grand td, .emph { font-weight: bold; }
+  .row.subtotal td, .row.total td { border-top: 1px solid #64748b; }
+  .row.total td { background: #f1f5f9; }
+  .row.grand td { background: #ecfdf5; border-top: 2px solid #0f172a; }
+</style></head>
+<body>
+  <div style="font-size:15px;font-weight:bold;">${esc(company)}</div>
+  <div style="font-size:12px;">${esc(model.title)}</div>
+  <div style="font-size:11px;color:#475569;">${propertyName ? 'Property: ' + esc(propertyName) : 'All Properties'}</div>
+  <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">Generated ${esc(new Date().toLocaleString('en-KE'))}</div>
+  <table>
+    ${statementHeadHtml(model)}
+    <tbody>${statementRowsHtml(model, values, { forExcel: true })}</tbody>
+  </table>
+</body></html>`
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${filename || model.id || 'statement'}_${today()}.xls`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }

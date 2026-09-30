@@ -132,9 +132,9 @@ export default function DataTable({
   return (
     <div>
       {(hasSearch || rightActions) && (
-        <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           {hasSearch ? (
-            <div className="relative w-full max-w-xs">
+            <div className="relative w-full sm:max-w-xs">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
@@ -146,7 +146,7 @@ export default function DataTable({
           ) : (
             <div />
           )}
-          {rightActions}
+          {rightActions && <div className="flex items-center gap-2 flex-wrap">{rightActions}</div>}
         </div>
       )}
 
@@ -159,20 +159,26 @@ export default function DataTable({
       ) : (
         <>
           <div className="overflow-x-auto -mx-5 rounded-lg">
-            <table className="w-full text-sm border-separate border-spacing-0 table-fixed">
+            <table className="w-full min-w-[640px] text-sm border-separate border-spacing-0 table-auto">
               <thead>
                 <tr className="text-left text-slate-500 bg-slate-50">
-                  {columns.map((col, i) => (
-                    <th
-                      key={col.key}
-                      style={col.width ? { width: col.width } : undefined}
-                      className={`font-semibold px-5 py-3 whitespace-nowrap border-y border-slate-200 ${
-                        i === 0 ? 'border-l-0' : ''
-                      } ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}`}
-                    >
-                      {col.header}
-                    </th>
-                  ))}
+                  {columns.map((col, i) => {
+                    const headerTruncates = col.render ? col.truncate === true : col.truncate !== false
+                    const thStyle = col.width
+                      ? { width: col.width }
+                      : (headerTruncates ? { maxWidth: col.maxWidth || '260px' } : undefined)
+                    return (
+                      <th
+                        key={col.key}
+                        style={thStyle}
+                        className={`font-semibold px-5 py-3 whitespace-nowrap border-y border-slate-200 ${
+                          i === 0 ? 'border-l-0' : ''
+                        } ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}`}
+                      >
+                        {col.header}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -186,16 +192,31 @@ export default function DataTable({
                         : 'hover:bg-slate-100/70'
                     } transition-colors`}
                   >
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        className={`px-5 py-3.5 text-slate-700 whitespace-nowrap border-b border-slate-100 ${
-                          col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
-                        }`}
-                      >
-                        {col.render ? col.render(row) : row[col.key]}
-                      </td>
-                    ))}
+                    {columns.map((col) => {
+                      const content = col.render ? col.render(row) : row[col.key]
+                      const isPlain = typeof content === 'string' || typeof content === 'number'
+                      // Long unbroken text should truncate with an ellipsis instead of
+                      // stretching the column and pushing others to the far end.
+                      // Plain-text cells truncate by default; a column opts out with
+                      // `truncate: false` (e.g. action buttons) or opts a custom-
+                      // rendered cell IN with `truncate: true`. `maxWidth` overrides
+                      // the default 260px cap.
+                      const wantsTruncate = col.render ? col.truncate === true : col.truncate !== false
+                      const maxW = col.maxWidth || '260px'
+                      const titleAttr = wantsTruncate && isPlain ? String(content) : undefined
+                      return (
+                        <td
+                          key={col.key}
+                          style={wantsTruncate ? { maxWidth: maxW } : (col.maxWidth ? { maxWidth: col.maxWidth } : undefined)}
+                          className={`px-5 py-3.5 text-slate-700 whitespace-nowrap border-b border-slate-100 ${
+                            col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
+                          } ${wantsTruncate ? 'truncate' : ''}`}
+                          title={titleAttr}
+                        >
+                          {content}
+                        </td>
+                      )
+                    })}
                   </tr>
                 ))}
               </tbody>

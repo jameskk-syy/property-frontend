@@ -24,7 +24,7 @@ import CaretakerManagement from './pages/admin/CaretakerManagement'
 import AccessManagement from './pages/admin/AccessManagement'
 import DocumentManagement from './pages/admin/DocumentManagement'
 import ConstructionManagement from './pages/admin/ConstructionManagement'
-import AdminComplaints from './pages/admin/AdminComplaints'
+import AdminFeedback from './pages/admin/AdminFeedback'
 import HeldItems from './pages/admin/HeldItems'
 import ConstructionPurchases from './pages/admin/ConstructionPurchases'
 import ConstructionSuppliers from './pages/admin/ConstructionSuppliers'
@@ -55,7 +55,7 @@ import LandlordFinancialReports from './pages/landlord/LandlordFinancialReports'
 // Caretaker
 import CaretakerDashboard from './pages/caretaker/CaretakerDashboard'
 import CaretakerProperties from './pages/caretaker/CaretakerProperties'
-import CaretakerMaintenance from './pages/caretaker/CaretakerMaintenance'
+import CaretakerFeedback from './pages/caretaker/CaretakerFeedback'
 import CaretakerTenants from './pages/caretaker/CaretakerTenants'
 import TenantOnboarding from './pages/caretaker/TenantOnboarding'
 import CaretakerExpenses from './pages/caretaker/CaretakerExpenses'
@@ -67,7 +67,7 @@ import TenantLease from './pages/tenant/TenantLease'
 import TenantPayments from './pages/tenant/TenantPayments'
 import TenantInvoices from './pages/tenant/TenantInvoices'
 import TenantDocuments from './pages/tenant/TenantDocuments'
-import TenantComplaints from './pages/tenant/TenantComplaints'
+import TenantFeedback from './pages/tenant/TenantFeedback'
 
 export default function App() {
   const { user } = useAuth()
@@ -102,7 +102,7 @@ export default function App() {
         <Route path="access-management" element={<AccessManagement />} />
         <Route path="documents" element={<DocumentManagement />} />
         <Route path="construction" element={<ConstructionManagement />} />
-        <Route path="complaints" element={<AdminComplaints />} />
+        <Route path="feedback" element={<AdminFeedback />} />
         <Route path="held-items" element={<HeldItems />} />
         <Route path="construction/purchases" element={<ConstructionPurchases />} />
         <Route path="construction/suppliers" element={<ConstructionSuppliers />} />
@@ -157,7 +157,7 @@ export default function App() {
         <Route path="tenant-onboarding" element={<TenantOnboarding />} />
         <Route path="expenses" element={<CaretakerExpenses />} />
         <Route path="meter-readings" element={<CaretakerMeterReadings />} />
-        <Route path="maintenance" element={<CaretakerMaintenance />} />
+        <Route path="feedback" element={<CaretakerFeedback />} />
         <Route path="whatsapp" element={<WhatsappCommunication />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="profile" element={<AccountSettings />} />
@@ -178,7 +178,7 @@ export default function App() {
         <Route path="payments" element={<TenantPayments />} />
         <Route path="invoices" element={<TenantInvoices />} />
         <Route path="documents" element={<TenantDocuments />} />
-        <Route path="complaints" element={<TenantComplaints />} />
+        <Route path="feedback" element={<TenantFeedback />} />
         <Route path="support" element={<WhatsappCommunication />} />
         <Route path="notifications" element={<NotificationsCenter />} />
         <Route path="profile" element={<AccountSettings />} />

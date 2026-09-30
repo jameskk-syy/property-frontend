@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Store, Eye, Users, Plus } from 'lucide-react'
 import ListPageTemplate from '../../components/patterns/ListPageTemplate'
 import FormModal from '../../components/patterns/FormModal'
+import PropertyFilter from '../../components/patterns/PropertyFilter'
 import Button from '../../components/ui/Button'
 import { Field, TextInput, Select } from '../../components/ui/Field'
 import { useToast } from '../../context/ToastContext'
@@ -13,12 +14,14 @@ export default function VacancyManagement() {
   const [vacancies, setVacancies] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [form, setForm] = useState({ property: properties[0]?.name || 'Greenview Apartments', unit: '', rent: '' })
 
   useEffect(() => {
     let mounted = true
-    // Fetch all vacant units (use large page size to get all)
-    api.getUnits(null, { page: 1, pageSize: 100 }).then((result) => {
+    setLoading(true)
+    // Fetch vacant units, scoped to the selected property (server-side).
+    api.getUnits(propertyFilter || null, { page: 1, pageSize: 100 }).then((result) => {
       if (mounted) {
         // Handle paginated response: { data: [...], pagination: {...} }
         const units = result?.data || result || []
@@ -37,7 +40,7 @@ export default function VacancyManagement() {
       }
     }).catch(() => {}).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
-  }, [])
+  }, [propertyFilter])
 
   const handleSubmit = () => {
     if (!form.unit || !form.rent) return
@@ -56,7 +59,12 @@ export default function VacancyManagement() {
         title="Vacancy Management"
         description="Track vacant units and how they're performing once listed."
         loading={loading}
-        actions={<Button icon={Plus} onClick={() => setOpen(true)}>List Vacancy</Button>}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <PropertyFilter value={propertyFilter} onChange={setPropertyFilter} />
+            <Button icon={Plus} onClick={() => setOpen(true)}>List Vacancy</Button>
+          </div>
+        }
         stats={[
           { label: 'Open Vacancies', value: vacancies.length, icon: Store },
           { label: 'Total Views', value: vacancies.reduce((s, v) => s + (v.views || 0), 0), icon: Eye, tone: 'blue' },

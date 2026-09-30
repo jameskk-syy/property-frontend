@@ -32,7 +32,7 @@ export const NAV_BY_ROLE = {
     { label: 'Access Management', to: '/admin/access-management', icon: Lock, group: 'People', key: 'accessManagement' },
 
     { label: 'Documents', to: '/admin/documents', icon: FileText, group: 'Operations', key: 'documents' },
-    { label: 'Complaints', to: '/admin/complaints', icon: MessageSquareWarning, group: 'Operations', key: 'complaints' },
+    { label: 'Feedback', to: '/admin/feedback', icon: MessageSquareWarning, group: 'Operations', key: 'feedback' },
     { label: 'Held Items', to: '/admin/held-items', icon: Package, group: 'Operations', key: 'heldItems' },
     { label: 'WhatsApp Communication', to: '/admin/whatsapp', icon: MessageCircle, group: 'Operations', key: 'whatsapp' },
 
@@ -49,7 +49,7 @@ export const NAV_BY_ROLE = {
     { label: 'My Properties', to: '/landlord/properties', icon: Building2, group: 'Portfolio' },
     { label: 'Tenants & Billing', to: '/landlord/billing', icon: Receipt, group: 'Portfolio' },
     { label: 'Financial Reports', to: '/landlord/financial-reports', icon: BarChart3, group: 'Portfolio' },
-    { label: 'Documents', to: '/landlord/documents', icon: FileText, group: 'Portfolio' },
+    // { label: 'Documents', to: '/landlord/documents', icon: FileText, group: 'Portfolio' },
     // { label: 'Notifications', to: '/landlord/notifications', icon: Bell, group: 'Account' },
     { label: 'My Profile', to: '/landlord/profile', icon: UserCircle, group: 'Account' },
   ],
@@ -60,7 +60,7 @@ export const NAV_BY_ROLE = {
     { label: 'Tenant Onboarding', to: '/caretaker/tenant-onboarding', icon: UserPlus, group: 'Operations' },
     { label: 'Expense Management', to: '/caretaker/expenses', icon: Wallet, group: 'Operations' },
     { label: 'Meter Readings', to: '/caretaker/meter-readings', icon: Gauge, group: 'Operations' },
-    // { label: 'Maintenance', to: '/caretaker/maintenance', icon: HardHat, group: 'Operations' },
+    { label: 'Feedback', to: '/caretaker/feedback', icon: MessageSquareWarning, group: 'Operations' },
     { label: 'WhatsApp Communication', to: '/caretaker/whatsapp', icon: MessageCircle, group: 'Operations' },
     // { label: 'Notifications', to: '/caretaker/notifications', icon: Bell, group: 'Account' },
     { label: 'My Profile', to: '/caretaker/profile', icon: UserCircle, group: 'Account' },
@@ -70,8 +70,8 @@ export const NAV_BY_ROLE = {
     { label: 'My Lease & Unit', to: '/tenant/lease', icon: Home, group: 'My Rental' },
     { label: 'Payments & Billing', to: '/tenant/payments', icon: Receipt, group: 'My Rental' },
     { label: 'Invoices', to: '/tenant/invoices', icon: FileText, group: 'My Rental' },
-    { label: 'Documents', to: '/tenant/documents', icon: FileText, group: 'My Rental' },
-    { label: 'Complaints', to: '/tenant/complaints', icon: MessageSquareWarning, group: 'My Rental' },
+    // { label: 'Documents', to: '/tenant/documents', icon: FileText, group: 'My Rental' },
+    { label: 'Feedback', to: '/tenant/feedback', icon: MessageSquareWarning, group: 'My Rental' },
     { label: 'Contact Caretaker', to: '/tenant/support', icon: MessageCircle, group: 'My Rental' },
 
     // { label: 'Notifications', to: '/tenant/notifications', icon: Bell, group: 'Account' },
