@@ -81,10 +81,14 @@ class ApiClient {
     }
 
     try {
+      // Token auth only (Authorization header). Never send cookies: a stale
+      // Frappe `sid` left in the browser (e.g. after a backend reinstall) makes
+      // init_request try to resume a dead session and fail with
+      // "User None is disabled" before the endpoint ever runs.
       const res = await fetch(url, {
         ...options,
         headers,
-        credentials: 'include'
+        credentials: 'omit'
       })
 
       // Handle 401/403 - authentication error

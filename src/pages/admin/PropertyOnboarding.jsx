@@ -32,12 +32,13 @@ const COUNTIES = [
 const UNIT_TYPES = [
   'Bedsitter',
   'Studio',
-  '1 Bedroom',
   'Singles',
+  '1 Bedroom',
   '2 Bedroom',
   '3 Bedroom',
   '4 Bedroom',
   'Penthouse',
+  'Shops',
   'Commercial Shop',
   'Office Space'
 ]

@@ -10,7 +10,7 @@ const TEMPLATE_HEADERS = [
   'amenities_available', 'landlord_name',
 ]
 
-const PROPERTY_TYPES = ['Apartment', 'Villa / Maisonette', 'Bedsitter Block', 'Commercial Complex', 'Mixed Use']
+const PROPERTY_TYPES = ['Apartment', 'Villa / Maisonette', 'Bedsitter Block', 'Singles', 'Commercial Complex', 'Mixed Use']
 
 // Split a single CSV line honoring simple double-quote quoting so values
 // containing commas (e.g. an address) survive parsing.

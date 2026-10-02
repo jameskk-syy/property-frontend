@@ -17,30 +17,61 @@ export default function CaretakerProperties() {
   const [loading, setLoading] = useState(true)
   const [exportProperty, setExportProperty] = useState('')
 
+  // Load the caretaker's assigned properties once (for the dropdown + stats).
+  // Resolved server-side, not by name-guessing. Default the selection to the
+  // first property so the table starts scoped to a real property.
   useEffect(() => {
     let mounted = true
-    setLoading(true)
-    // Assigned properties resolved server-side (not by name-guessing).
-    api.getMyProperties().then(async (props) => {
+    api.getMyProperties().then((props) => {
+      if (!mounted) return
       const mine = Array.isArray(props) ? props : []
-      if (mounted) {
-        setMyProperties(mine)
-        // Default export property to first one
-        if (mine.length > 0) setExportProperty(mine[0].id)
+      setMyProperties(mine)
+      if (mine.length > 0) {
+        setExportProperty(mine[0].id)
+      } else {
+        // No assigned properties: nothing to fetch, settle to empty state.
+        setUnits([])
+        setLoading(false)
       }
-      // Pull units for each assigned property and merge - handle paginated response
-      const results = await Promise.all(
-        mine.map((p) => api.getUnits(p.id, { page: 1, pageSize: 1000 }).then((result) => {
-          // Handle paginated response: { data: [...], pagination: {...} }
-          return result?.data || result || []
-        }).catch(() => []))
-      )
-      if (mounted) setUnits(results.flat())
-    }).catch(() => {}).finally(() => {
+    }).catch(() => {
       if (mounted) setLoading(false)
     })
     return () => { mounted = false }
   }, [user?.name])
+
+  // Fetch units from the backend whenever the selected property changes, so the
+  // filter happens server-side (not by filtering an already-loaded list). A
+  // specific selection fetches that property's units; 'All properties' fetches
+  // units across every assigned property and merges them.
+  useEffect(() => {
+    let mounted = true
+    // Wait until properties are known so 'All properties' can fan out correctly.
+    if (myProperties.length === 0) return
+
+    setLoading(true)
+    const targets = exportProperty
+      ? [exportProperty]
+      : myProperties.map((p) => p.id)
+
+    Promise.all(
+      targets.map((pid) =>
+        api.getUnits(pid, { page: 1, pageSize: 1000 })
+          .then((result) => result?.data || result || [])
+          .catch(() => [])
+      )
+    ).then((results) => {
+      if (mounted) setUnits(results.flat())
+    }).finally(() => {
+      if (mounted) setLoading(false)
+    })
+
+    return () => { mounted = false }
+  }, [exportProperty, myProperties])
+
+  // `units` is already scoped by the backend to the current selection, so the
+  // table renders it directly. A caretaker can hold two or more properties;
+  // 'All properties' fetches them all, a specific selection just that one.
+  const visibleUnits = units
 
   const handleExport = () => {
     if (!exportProperty) {
@@ -49,7 +80,7 @@ export default function CaretakerProperties() {
     }
     const prop = myProperties.find(p => p.id === exportProperty)
     const propName = prop?.name || 'Property'
-    // Filter by property ID (u.property holds the property ID like PROP-78FE9E)
+    // Units are already server-filtered to the selected property.
     const propUnits = units.filter(u => u.property === exportProperty)
     
     if (propUnits.length === 0) {
@@ -92,11 +123,16 @@ export default function CaretakerProperties() {
   // Unit totals come from the per-property summary (getMyProperties), a grouped
   // DB aggregate, so they stay accurate even when a property has more than the
   // fetched page of units. Counting the merged unit list would cap per property.
-  const totalUnitsCount = myProperties.reduce((s, p) => s + (p.units || 0), 0) || units.length
-  const occupied = myProperties.reduce((s, p) => s + (p.occupied || 0), 0)
-    || units.filter((u) => u.status === 'Occupied').length
-  const vacant = myProperties.reduce((s, p) => s + (p.vacant || 0), 0)
-    || units.filter((u) => u.status === 'Vacant').length
+  // The stats follow the dropdown: a specific property shows that property's own
+  // aggregate, 'All properties' shows the portfolio total.
+  const statsScope = exportProperty
+    ? myProperties.filter((p) => p.id === exportProperty)
+    : myProperties
+  const totalUnitsCount = statsScope.reduce((s, p) => s + (p.units || 0), 0) || visibleUnits.length
+  const occupied = statsScope.reduce((s, p) => s + (p.occupied || 0), 0)
+    || visibleUnits.filter((u) => u.status === 'Occupied').length
+  const vacant = statsScope.reduce((s, p) => s + (p.vacant || 0), 0)
+    || visibleUnits.filter((u) => u.status === 'Vacant').length
 
   return (
     <ListPageTemplate
@@ -110,6 +146,7 @@ export default function CaretakerProperties() {
             onChange={(e) => setExportProperty(e.target.value)}
             className="w-full sm:w-48"
           >
+            <option value="">All properties</option>
             {myProperties.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -134,7 +171,7 @@ export default function CaretakerProperties() {
           <Badge tone={r.status === 'Occupied' ? 'brand' : r.status === 'Vacant' ? 'orange' : 'red'}>{r.status}</Badge>
         ) },
       ]}
-      rows={units}
+      rows={visibleUnits}
       searchKeys={['property', 'number', 'type']}
       searchPlaceholder="Search units…"
       emptyMessage="No units found for your assigned properties."

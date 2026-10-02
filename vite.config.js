@@ -26,12 +26,23 @@ export default defineConfig({
         changeOrigin: true,
         // Allow self-signed/HTTP backends in dev.
         secure: false,
-        // Frappe issues session cookies scoped to its site host; rewrite the
-        // cookie domain so the browser stores them under the dev host.
-        cookieDomainRewrite: 'mysite.local',
         headers: {
           // Frappe resolves the site by Host header; pin it to the site name.
           'Host': 'mysite.local'
+        },
+        // Auth is token-based (Authorization header), so sessions/cookies are
+        // not used. Strip cookies in BOTH directions so no stale Frappe `sid`
+        // can ride along on requests or get stored in the browser. This is what
+        // prevents the "User None is disabled" error after a backend reinstall.
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            // Don't forward any browser cookies to Frappe.
+            proxyReq.removeHeader('cookie')
+          })
+          proxy.on('proxyRes', (proxyRes) => {
+            // Don't let Frappe set a session cookie under the dev host.
+            delete proxyRes.headers['set-cookie']
+          })
         }
       }
     }
