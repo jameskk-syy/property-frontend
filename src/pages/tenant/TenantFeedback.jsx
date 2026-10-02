@@ -62,12 +62,9 @@ export default function TenantFeedback() {
 
   const columns = [
     { key: 'date', header: 'Date', render: (r) => <span className="text-slate-600">{r.date}</span> },
-    { key: 'feedback', header: 'Feedback', render: (r) => (
-      <span className="font-medium text-slate-800 line-clamp-2">{r.feedback}</span>
-    ) },
     { key: 'category', header: 'Category', render: (r) => <span className="text-slate-600">{r.category}</span> },
     { key: 'status', header: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-    { key: 'actions', header: '', align: 'right', render: (r) => (
+    { key: 'actions', header: '', align: 'right', truncate: false, render: (r) => (
       <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(r)}>View</Button>
     )},
   ]

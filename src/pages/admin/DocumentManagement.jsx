@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   FileText, Download, Eye, FileCheck2, FileWarning, CreditCard,
   X, PenLine, CheckCircle2, AlertTriangle, Building2, Phone, Mail, CalendarDays,
@@ -140,32 +140,72 @@ function DocumentDrawer({ row, onClose, onView, onDownload, busy, onImage }) {
 export default function DocumentManagement() {
   const { showToast } = useToast()
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(null)
   const [selected, setSelected] = useState(null)
   const [properties, setProperties] = useState([])
   const [propertyFilter, setPropertyFilter] = useState('')
-  const [tenantFilter, setTenantFilter] = useState('')
   const [lightbox, setLightbox] = useState(null)
 
-  useEffect(() => {
-    let mounted = true
+  const fetchDocs = useCallback((page = 1, size = 8, search = '', property = '') => {
     setLoading(true)
-    api.getTenantDocuments({ property: propertyFilter || null, tenant: tenantFilter || null })
-      .then((res) => { if (mounted) setRows(res || []) })
+    api.getTenantDocuments({
+      property: property || null,
+      page,
+      pageSize: size,
+      search: search || '',
+    })
+      .then((res) => {
+        if (res && res.data) {
+          setRows(res.data)
+          setPagination(res.pagination)
+        } else if (Array.isArray(res)) {
+          setRows(res)
+          setPagination(null)
+        }
+      })
       .catch(() => {})
-      .finally(() => { if (mounted) setLoading(false) })
-    return () => { mounted = false }
-  }, [propertyFilter, tenantFilter])
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Reload when the property filter changes (resets to page 1).
+  useEffect(() => {
+    setCurrentPage(1)
+    fetchDocs(1, pageSize, searchQuery, propertyFilter)
+  }, [propertyFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.getProperties().then((res) => setProperties(res || [])).catch(() => {})
   }, [])
 
-  // Distinct tenants from the current rows, for the tenant filter dropdown.
-  const tenantOptions = Array.from(
-    new Map(rows.map((r) => [r.tenant, r.tenant_name || r.tenant])).entries()
-  ).map(([id, name]) => ({ id, name }))
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      fetchDocs(1, newPageSize, searchQuery, propertyFilter)
+    } else {
+      setCurrentPage(newPage)
+      fetchDocs(newPage, pageSize, searchQuery, propertyFilter)
+    }
+  }, [fetchDocs, pageSize, searchQuery, propertyFilter])
+
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    fetchDocs(1, pageSize, query, propertyFilter)
+  }, [fetchDocs, pageSize, propertyFilter])
+
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   const handleView = async (lease) => {
     setBusy(`${lease}:view`)
@@ -202,10 +242,9 @@ export default function DocumentManagement() {
         loading={loading}
         actions={
           <FilterDrawer
-            activeCount={[propertyFilter, tenantFilter].filter(Boolean).length}
+            activeCount={[propertyFilter].filter(Boolean).length}
             onClear={() => {
               setPropertyFilter('')
-              setTenantFilter('')
             }}
           >
             <FilterItem label="Property">
@@ -214,19 +253,13 @@ export default function DocumentManagement() {
                 {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
             </FilterItem>
-            <FilterItem label="Tenant">
-              <Select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)} className="w-full lg:w-44 text-sm py-1.5">
-                <option value="">All tenants</option>
-                {tenantOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </Select>
-            </FilterItem>
           </FilterDrawer>
         }
         stats={[
-          { label: 'Leases on File', value: rows.length, icon: FileText },
-          { label: 'Signed', value: signedCount, icon: FileCheck2, tone: 'brand' },
-          { label: 'Unsigned', value: unsignedCount, icon: FileWarning, tone: 'orange' },
-          { label: 'National ID on Record', value: withId, icon: CreditCard, tone: 'blue' },
+          { label: 'Leases on File', value: pagination?.total ?? rows.length, icon: FileText },
+          { label: 'Signed (this page)', value: signedCount, icon: FileCheck2, tone: 'brand' },
+          { label: 'Unsigned (this page)', value: unsignedCount, icon: FileWarning, tone: 'orange' },
+          { label: 'National ID (this page)', value: withId, icon: CreditCard, tone: 'blue' },
         ]}
         onRowClick={(row) => setSelected(row)}
         columns={[
@@ -284,9 +317,11 @@ export default function DocumentManagement() {
           },
         ]}
         rows={rows}
-        searchKeys={['tenant_name', 'national_id', 'property_name', 'unit', 'lease']}
-        searchPlaceholder="Search by tenant, national ID, property, unit…"
+        searchPlaceholder="Search by tenant, national ID…"
         emptyMessage="No lease documents yet. They appear here once tenants are onboarded."
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <DocumentDrawer

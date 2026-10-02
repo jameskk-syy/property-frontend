@@ -47,29 +47,40 @@ export default function TenantLease() {
     )
   }
 
-  const rows = [
-    { icon: Home, label: 'Property', value: lease.property_name },
-    { icon: Home, label: 'Unit', value: lease.unit },
+  // A tenant may hold more than one unit. Prefer the full `leases` list; fall
+  // back to the single primary lease for older backends.
+  const unitLeases = Array.isArray(lease.leases) && lease.leases.length
+    ? lease.leases
+    : [{
+        lease: lease.lease,
+        unit: lease.unit,
+        property_name: lease.property_name,
+        rent: lease.rent,
+        deposit: lease.deposit,
+        status: lease.status,
+      }]
+  const multi = unitLeases.length > 1
+
+  // Shared tenancy details (same across all units for this tenant).
+  const sharedRows = [
     { icon: User, label: 'Landlord', value: lease.landlord },
     { icon: User, label: 'Caretaker', value: lease.caretaker },
     { icon: Calendar, label: 'Lease Start', value: lease.lease_start },
     { icon: Calendar, label: 'Lease End', value: lease.lease_end },
-    { icon: Wallet, label: 'Monthly Rent', value: formatKsh(lease.rent) },
-    { icon: Wallet, label: 'Security Deposit', value: formatKsh(lease.deposit) },
   ]
 
   return (
     <div>
       <PageHeader
         title="My Lease & Unit"
-        description="Details of your current tenancy agreement."
+        description={multi ? `Your tenancy agreement covers ${unitLeases.length} units.` : 'Details of your current tenancy agreement.'}
         actions={lease.has_lease_pdf && (
           <Button icon={FileText} onClick={handleView} disabled={busy}>
             {busy ? 'Opening…' : 'View Agreement'}
           </Button>
         )}
       />
-      <Card>
+      <Card className="mb-5">
         <div className="flex items-center gap-2 mb-4">
           {lease.is_signed ? (
             <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -82,7 +93,7 @@ export default function TenantLease() {
           )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
-          {rows.map((r) => (
+          {sharedRows.map((r) => (
             <div key={r.label} className="flex items-center gap-3">
               <span className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
                 <r.icon size={16} />
@@ -95,6 +106,29 @@ export default function TenantLease() {
           ))}
         </div>
       </Card>
+
+      {/* One card per unit so a multi-unit tenant sees every unit's rent/deposit. */}
+      <h3 className="text-sm font-semibold text-slate-700 mb-3">{multi ? 'Your Units' : 'Unit'}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {unitLeases.map((u) => (
+          <Card key={u.lease || u.unit}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                <Home size={16} />
+              </span>
+              <div>
+                <p className="text-xs text-slate-400">{u.property_name}</p>
+                <p className="text-sm font-semibold text-slate-800">Unit {u.unit}</p>
+              </div>
+            </div>
+            <div className="space-y-2.5 text-sm">
+              <div className="flex justify-between"><span className="text-slate-500">Monthly Rent</span><span className="font-medium text-slate-800">{formatKsh(u.rent)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Security Deposit</span><span className="font-medium text-slate-800">{formatKsh(u.deposit)}</span></div>
+              {u.status && <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="font-medium text-slate-800">{u.status}</span></div>}
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }

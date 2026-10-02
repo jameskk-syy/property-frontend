@@ -88,6 +88,10 @@ function StkDialog({ open, onClose, tenant, onSend, sending }) {
 export default function CaretakerTenants() {
   const { showToast } = useToast()
   const [rows, setRows] = useState([])
+  const [pagination, setPagination] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(null)
 
@@ -105,15 +109,49 @@ export default function CaretakerTenants() {
   const [importOpen, setImportOpen] = useState(false)
   const [editTenantId, setEditTenantId] = useState(null)
 
-  const load = useCallback(() => {
+  const load = useCallback((page = currentPage, size = pageSize, search = searchQuery) => {
     setLoading(true)
-    api.getMyTenants()
-      .then((res) => setRows(Array.isArray(res) ? res : []))
+    api.getMyTenants({ page, pageSize: size, search })
+      .then((res) => {
+        if (res && res.data) {
+          setRows(res.data)
+          setPagination(res.pagination)
+        } else if (Array.isArray(res)) {
+          setRows(res)
+          setPagination(null)
+        }
+      })
       .catch((err) => showToast(err?.message || 'Could not load tenants.'))
       .finally(() => setLoading(false))
-  }, [showToast])
+  }, [showToast, currentPage, pageSize, searchQuery])
 
-  useEffect(() => { load() }, [load])
+  // Initial load (and when page size changes).
+  useEffect(() => { load(1, pageSize, searchQuery) }, [pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePageChange = useCallback((newPage, newPageSize) => {
+    if (newPageSize && newPageSize !== pageSize) {
+      setPageSize(newPageSize)
+      setCurrentPage(1)
+      load(1, newPageSize, searchQuery)
+    } else {
+      setCurrentPage(newPage)
+      load(newPage, pageSize, searchQuery)
+    }
+  }, [load, pageSize, searchQuery])
+
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    load(1, pageSize, query)
+  }, [load, pageSize])
+
+  const serverPagination = pagination ? {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    total: pagination.total,
+    hasNext: pagination.hasNext,
+    hasPrev: pagination.hasPrev,
+  } : null
 
   // Open STK dialog instead of sending directly
   const openStkDialog = (row) => {
@@ -248,10 +286,10 @@ export default function CaretakerTenants() {
           <Button icon={Upload} onClick={() => setImportOpen(true)}>Import Tenants</Button>
         }
         stats={[
-          { label: 'Total Tenants', value: rows.length, icon: Users },
-          { label: 'Paid', value: paid, icon: CheckCircle2, tone: 'brand' },
-          { label: 'Awaiting Payment', value: pending, icon: Clock, tone: 'orange' },
-          { label: 'Not Assigned', value: unassigned, icon: AlertTriangle, tone: 'red' },
+          { label: 'Total Tenants', value: pagination?.total ?? rows.length, icon: Users },
+          { label: 'Paid (this page)', value: paid, icon: CheckCircle2, tone: 'brand' },
+          { label: 'Awaiting (this page)', value: pending, icon: Clock, tone: 'orange' },
+          { label: 'Not Assigned (this page)', value: unassigned, icon: AlertTriangle, tone: 'red' },
         ]}
         columns={[
           { key: 'tenant_name', header: 'Tenant' },
@@ -316,9 +354,11 @@ export default function CaretakerTenants() {
           },
         ]}
         rows={rows}
-        searchKeys={['tenant_name', 'phone', 'unit']}
         searchPlaceholder="Search your tenants…"
         emptyMessage="You haven't onboarded any tenants yet."
+        serverPagination={serverPagination}
+        onPageChange={handlePageChange}
+        onSearch={handleSearch}
       />
 
       <Modal

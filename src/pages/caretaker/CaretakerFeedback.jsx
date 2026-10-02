@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Plus, Clock, CheckCircle2, Building, User, Users } from 'lucide-react'
+import { MessageSquare, Plus, Clock, CheckCircle2, Building, User, Users, Eye } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
 import Card from '../../components/ui/Card'
@@ -149,16 +149,13 @@ export default function CaretakerFeedback() {
         {r.unit && <p className="text-xs text-slate-400">Unit {r.unit}</p>}
       </div>
     ) },
-    { key: 'feedback', header: 'Feedback', render: (r) => (
-      <p className="font-medium text-slate-800 line-clamp-2 max-w-xs">{r.feedback}</p>
-    ) },
     { key: 'category', header: 'Category', render: (r) => <span className="text-slate-600">{r.category}</span> },
     { key: 'priority', header: 'Priority', render: (r) => <Badge tone={prioTone(r.priority)}>{r.priority}</Badge> },
     { key: 'status', header: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
     { key: 'date', header: 'Date' },
-    { key: 'actions', header: '', render: (r) => (
-      <Button size="sm" variant="secondary" onClick={() => openRespond(r)}>
-        {r.response ? 'Update' : 'Respond'}
+    { key: 'actions', header: '', align: 'right', truncate: false, render: (r) => (
+      <Button size="sm" variant="secondary" icon={Eye} onClick={() => openRespond(r)}>
+        View
       </Button>
     ) },
   ]

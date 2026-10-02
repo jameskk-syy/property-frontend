@@ -1126,9 +1126,36 @@ class ApiClient {
   }
 
   /** Caretaker: all tenants they onboarded or who lease their properties. */
-  async getMyTenants() {
-    const data = await this.pmApi('directory.my_tenants')
-    return Array.isArray(data) ? data : []
+  /**
+   * Caretaker: tenants they manage, server-side paginated.
+   * Returns { data, pagination:{page,pageSize,total,totalPages,hasNext,hasPrev} }.
+   * Each tenant may hold multiple units: `unit` is a combined label, `leases` is
+   * the per-unit breakdown.
+   */
+  async getMyTenants({ page = 1, pageSize = 8, search = '' } = {}) {
+    const result = await this.pmApi('directory.my_tenants', { page, page_size: pageSize, search })
+    if (result && result.data && result.pagination) {
+      return {
+        data: result.data,
+        pagination: {
+          page: result.pagination.page,
+          pageSize: result.pagination.page_size,
+          total: result.pagination.total,
+          totalPages: result.pagination.total_pages,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev,
+        },
+      }
+    }
+    // Back-compat: older backend returned a plain array.
+    if (Array.isArray(result)) return { data: result, pagination: null }
+    return { data: [], pagination: null }
+  }
+
+  /** The logged-in tenant's leases (all units) for the payment unit picker. */
+  async getMyLeases() {
+    const res = await this.request('/method/property_management.api.tenant.my_leases')
+    return Array.isArray(res?.message) ? res.message : []
   }
 
   /**
@@ -1466,15 +1493,34 @@ class ApiClient {
 
   // --- DOCUMENTS (signed leases + tenant docs) ---
   /** One row per lease: tenant details + signed lease PDF availability. */
-  async getTenantDocuments({ tenant = null, property = null } = {}) {
+  async getTenantDocuments({ tenant = null, property = null, page = 1, pageSize = 8, search = '' } = {}) {
     try {
       const qs = new URLSearchParams()
       if (tenant) qs.append('tenant', tenant)
       if (property) qs.append('property', property)
+      qs.append('page', String(page))
+      qs.append('page_size', String(pageSize))
+      if (search) qs.append('search', search)
       const res = await this.request(`/method/property_management.api.documents.list_tenant_documents?${qs.toString()}`)
-      if (res && Array.isArray(res.message)) return res.message
+      const msg = res?.message
+      // New paginated shape.
+      if (msg && msg.data && msg.pagination) {
+        return {
+          data: msg.data,
+          pagination: {
+            page: msg.pagination.page,
+            pageSize: msg.pagination.page_size,
+            total: msg.pagination.total,
+            totalPages: msg.pagination.total_pages,
+            hasNext: msg.pagination.has_next,
+            hasPrev: msg.pagination.has_prev,
+          },
+        }
+      }
+      // Back-compat: bare array.
+      if (Array.isArray(msg)) return { data: msg, pagination: null }
     } catch {}
-    return []
+    return { data: [], pagination: null }
   }
 
   /** Absolute URL to view a lease's signed PDF (session cookie authenticates). */

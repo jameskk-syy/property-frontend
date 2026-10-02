@@ -25,15 +25,28 @@ export default function TenantDashboard() {
   useEffect(() => { load() }, [])
 
   const lease = data?.lease || null
+  const leases = Array.isArray(data?.leases) ? data.leases : (lease?.leases || [])
   const balance = Number(data?.balance) || 0
   const payments = data?.recent_payments || []
-  const rent = lease?.rent || 0
+  const multi = leases.length > 1
+  // Monthly rent across all units for a multi-unit tenant; single unit's rent otherwise.
+  const rent = multi
+    ? leases.reduce((s, l) => s + (Number(l.rent) || 0), 0)
+    : (lease?.rent || 0)
+  // Combined deposit across all units (falls back to the primary lease deposit).
+  const totalDeposit = leases.length
+    ? leases.reduce((s, l) => s + (Number(l.deposit) || 0), 0)
+    : (lease?.deposit || 0)
+  // Header: list every unit when the tenant holds more than one.
+  const unitsText = multi
+    ? leases.map((l) => `${l.property_name} · ${l.unit}`).join('  •  ')
+    : (lease ? `${lease.property_name} · Unit ${lease.unit}` : 'Your rental overview')
 
   return (
     <div>
       <PageHeader
         title={`Welcome back, ${data?.tenant_name || user?.name || ''}`}
-        description={lease ? `${lease.property_name} · Unit ${lease.unit}` : 'Your rental overview'}
+        description={unitsText}
         actions={<Button onClick={() => setPayOpen(true)}>Pay Rent</Button>}
       />
       <PayRentModal
@@ -49,7 +62,7 @@ export default function TenantDashboard() {
         <div className="mb-6"><StatCardsSkeleton count={4} /></div>
       ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Monthly Rent" value={formatKsh(rent)} icon={Home} />
+        <StatCard label={multi ? `Monthly Rent (${leases.length} units)` : 'Monthly Rent'} value={formatKsh(rent)} icon={Home} />
         <StatCard
           label="Balance Due"
           value={balance > 0 ? formatKsh(balance) : 'KSh 0'}
@@ -64,6 +77,31 @@ export default function TenantDashboard() {
         />
         <StatCard label="Payment Status" value={balance > 0 ? 'Balance due' : 'Up to date'} icon={CheckCircle2} tone={balance > 0 ? 'orange' : 'brand'} />
       </div>
+      )}
+
+      {!loading && multi && (
+        <Card className="mb-5" padded={false}>
+          <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+            <span className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+              <Home size={16} />
+            </span>
+            <div>
+              <h3 className="font-semibold text-slate-900 leading-tight">Your Units</h3>
+              <p className="text-xs text-slate-400">You rent {leases.length} units. Rent is shown per unit.</p>
+            </div>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {leases.map((l) => (
+              <div key={l.lease} className="flex items-center justify-between px-5 py-3.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">{l.property_name} · {l.unit}</p>
+                  <p className="text-xs text-slate-400">Rent {formatKsh(l.rent)}{l.outstanding > 0 ? ` · Due ${formatKsh(l.outstanding)}` : ''}</p>
+                </div>
+                <Badge tone={l.status === 'Active' ? 'brand' : 'slate'}>{l.status}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       {loading ? (
@@ -129,7 +167,10 @@ export default function TenantDashboard() {
             <div className="space-y-2.5 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Landlord</span><span className="font-medium text-slate-800">{lease.landlord || '—'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Caretaker</span><span className="font-medium text-slate-800">{lease.caretaker || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Deposit</span><span className="font-medium text-slate-800">{formatKsh(lease.deposit)}</span></div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">{multi ? 'Total Deposit' : 'Deposit'}</span>
+                <span className="font-medium text-slate-800">{formatKsh(totalDeposit)}</span>
+              </div>
               <div className="flex justify-between"><span className="text-slate-500">Lease Start</span><span className="font-medium text-slate-800">{lease.lease_start || '—'}</span></div>
             </div>
           ) : (
